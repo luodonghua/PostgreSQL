@@ -1,1 +1,2 @@
 https://www.nyse.com/markets/us-equity-volumes
+https://www.cybertec-postgresql.com/secret/oil_ext.txt

@@ -1,0 +1,644 @@
+North America	USA	1965	9014	11522
+North America	USA	1966	9579	12100
+North America	USA	1967	10219	12567
+North America	USA	1968	10600	13405
+North America	USA	1969	10828	14153
+North America	USA	1970	11297	14710
+North America	USA	1971	11156	15223
+North America	USA	1972	11185	16381
+North America	USA	1973	10946	17318
+North America	USA	1974	10461	16631
+North America	USA	1975	10008	16334
+North America	USA	1976	9736	17461
+North America	USA	1977	9863	18443
+North America	USA	1978	10274	18756
+North America	USA	1979	10136	18438
+North America	USA	1980	10170	17062
+North America	USA	1981	10181	16060
+North America	USA	1982	10199	15295
+North America	USA	1983	10247	15235
+North America	USA	1984	10509	15725
+North America	USA	1985	10580	15726
+North America	USA	1986	10231	16281
+North America	USA	1987	9944	16665
+North America	USA	1988	9765	17283
+North America	USA	1989	9159	17325
+North America	USA	1990	8914	16988
+North America	USA	1991	9076	16713
+North America	USA	1992	8868	17033
+North America	USA	1993	8583	17236
+North America	USA	1994	8389	17719
+North America	USA	1995	8322	17725
+North America	USA	1996	8295	18309
+North America	USA	1997	8269	18621
+North America	USA	1998	8011	18917
+North America	USA	1999	7731	19519
+North America	USA	2000	7733	19701
+North America	USA	2001	7669	19649
+North America	USA	2002	7626	19761
+North America	USA	2003	7400	20033
+North America	USA	2004	7228	20732
+North America	USA	2005	6895	20802
+North America	USA	2006	6841	20687
+North America	USA	2007	6847	20680
+North America	USA	2008	6734	19490
+North America	USA	2009	7271	18771
+North America	USA	2010	7513	19180
+North America	Canada	1965	920	1108
+North America	Canada	1966	1012	1167
+North America	Canada	1967	1106	1246
+North America	Canada	1968	1194	1322
+North America	Canada	1969	1306	1380
+North America	Canada	1970	1473	1472
+North America	Canada	1971	1582	1512
+North America	Canada	1972	1829	1589
+North America	Canada	1973	2114	1682
+North America	Canada	1974	1993	1713
+North America	Canada	1975	1735	1682
+North America	Canada	1976	1598	1789
+North America	Canada	1977	1608	1812
+North America	Canada	1978	1597	1849
+North America	Canada	1979	1835	1931
+North America	Canada	1980	1764	1898
+North America	Canada	1981	1610	1788
+North America	Canada	1982	1590	1609
+North America	Canada	1983	1661	1518
+North America	Canada	1984	1775	1540
+North America	Canada	1985	1812	1556
+North America	Canada	1986	1805	1559
+North America	Canada	1987	1908	1627
+North America	Canada	1988	2002	1710
+North America	Canada	1989	1961	1771
+North America	Canada	1990	1967	1747
+North America	Canada	1991	1983	1659
+North America	Canada	1992	2065	1689
+North America	Canada	1993	2189	1697
+North America	Canada	1994	2281	1726
+North America	Canada	1995	2402	1848
+North America	Canada	1996	2479	1889
+North America	Canada	1997	2587	1969
+North America	Canada	1998	2672	2002
+North America	Canada	1999	2604	2061
+North America	Canada	2000	2703	2043
+North America	Canada	2001	2727	2094
+North America	Canada	2002	2858	2172
+North America	Canada	2003	3003	2228
+North America	Canada	2004	3079	2309
+North America	Canada	2005	3040	2288
+North America	Canada	2006	3208	2295
+North America	Canada	2007	3290	2361
+North America	Canada	2008	3207	2315
+North America	Canada	2009	3202	2190
+North America	Canada	2010	3332	2316
+North America	Mexico	1965	362	296
+North America	Mexico	1966	370	309
+North America	Mexico	1967	411	331
+North America	Mexico	1968	439	361
+North America	Mexico	1969	461	383
+North America	Mexico	1970	487	412
+North America	Mexico	1971	486	434
+North America	Mexico	1972	506	481
+North America	Mexico	1973	525	515
+North America	Mexico	1974	653	589
+North America	Mexico	1975	806	663
+North America	Mexico	1976	894	730
+North America	Mexico	1977	1085	755
+North America	Mexico	1978	1327	874
+North America	Mexico	1979	1607	951
+North America	Mexico	1980	2129	1048
+North America	Mexico	1981	2553	1172
+North America	Mexico	1982	3001	1228
+North America	Mexico	1983	2930	1203
+North America	Mexico	1984	2942	1280
+North America	Mexico	1985	2912	1345
+North America	Mexico	1986	2758	1371
+North America	Mexico	1987	2879	1421
+North America	Mexico	1988	2877	1407
+North America	Mexico	1989	2897	1503
+North America	Mexico	1990	2940	1580
+North America	Mexico	1991	3099	1660
+North America	Mexico	1992	3098	1683
+North America	Mexico	1993	3115	1687
+North America	Mexico	1994	3135	1821
+North America	Mexico	1995	3054	1690
+North America	Mexico	1996	3270	1720
+North America	Mexico	1997	3408	1770
+North America	Mexico	1998	3498	1868
+North America	Mexico	1999	3351	1887
+North America	Mexico	2000	3455	1965
+North America	Mexico	2001	3568	1939
+North America	Mexico	2002	3592	1864
+North America	Mexico	2003	3794	1909
+North America	Mexico	2004	3830	1983
+North America	Mexico	2005	3765	2030
+North America	Mexico	2006	3689	2019
+North America	Mexico	2007	3478	2067
+North America	Mexico	2008	3165	2054
+North America	Mexico	2009	2978	1996
+North America	Mexico	2010	2959	2014
+Middle East	Iran	1965	1908	134
+Middle East	Iran	1966	2132	148
+Middle East	Iran	1967	2603	165
+Middle East	Iran	1968	2840	184
+Middle East	Iran	1969	3376	203
+Middle East	Iran	1970	3848	222
+Middle East	Iran	1971	4572	245
+Middle East	Iran	1972	5059	273
+Middle East	Iran	1973	5907	328
+Middle East	Iran	1974	6060	381
+Middle East	Iran	1975	5387	448
+Middle East	Iran	1976	5918	505
+Middle East	Iran	1977	5714	590
+Middle East	Iran	1978	5302	652
+Middle East	Iran	1979	3218	674
+Middle East	Iran	1980	1479	591
+Middle East	Iran	1981	1321	585
+Middle East	Iran	1982	2397	636
+Middle East	Iran	1983	2454	772
+Middle East	Iran	1984	2043	827
+Middle East	Iran	1985	2205	918
+Middle East	Iran	1986	2054	843
+Middle East	Iran	1987	2342	892
+Middle East	Iran	1988	2349	929
+Middle East	Iran	1989	2894	1032
+Middle East	Iran	1990	3270	1070
+Middle East	Iran	1991	3500	1147
+Middle East	Iran	1992	3523	1234
+Middle East	Iran	1993	3712	1288
+Middle East	Iran	1994	3730	1329
+Middle East	Iran	1995	3744	1314
+Middle East	Iran	1996	3759	1347
+Middle East	Iran	1997	3776	1415
+Middle East	Iran	1998	3855	1400
+Middle East	Iran	1999	3603	1413
+Middle East	Iran	2000	3852	1457
+Middle East	Iran	2001	3825	1486
+Middle East	Iran	2002	3580	1493
+Middle East	Iran	2003	4002	1509
+Middle East	Iran	2004	4201	1549
+Middle East	Iran	2005	4184	1700
+Middle East	Iran	2006	4260	1845
+Middle East	Iran	2007	4303	1875
+Middle East	Iran	2008	4396	1960
+Middle East	Iran	2009	4249	2012
+Middle East	Iran	2010	4352	1874
+Middle East	Iraq	1965	1313	\N
+Middle East	Iraq	1966	1392	\N
+Middle East	Iraq	1967	1228	\N
+Middle East	Iraq	1968	1503	\N
+Middle East	Iraq	1969	1521	\N
+Middle East	Iraq	1970	1549	\N
+Middle East	Iraq	1971	1694	\N
+Middle East	Iraq	1972	1466	\N
+Middle East	Iraq	1973	2018	\N
+Middle East	Iraq	1974	1977	\N
+Middle East	Iraq	1975	2271	\N
+Middle East	Iraq	1976	2422	\N
+Middle East	Iraq	1977	2358	\N
+Middle East	Iraq	1978	2574	\N
+Middle East	Iraq	1979	3489	\N
+Middle East	Iraq	1980	2658	\N
+Middle East	Iraq	1981	907	\N
+Middle East	Iraq	1982	988	\N
+Middle East	Iraq	1983	1106	\N
+Middle East	Iraq	1984	1228	\N
+Middle East	Iraq	1985	1425	\N
+Middle East	Iraq	1986	1899	\N
+Middle East	Iraq	1987	2391	\N
+Middle East	Iraq	1988	2782	\N
+Middle East	Iraq	1989	2838	\N
+Middle East	Iraq	1990	2149	\N
+Middle East	Iraq	1991	285	\N
+Middle East	Iraq	1992	531	\N
+Middle East	Iraq	1993	455	\N
+Middle East	Iraq	1994	505	\N
+Middle East	Iraq	1995	530	\N
+Middle East	Iraq	1996	580	\N
+Middle East	Iraq	1997	1166	\N
+Middle East	Iraq	1998	2121	\N
+Middle East	Iraq	1999	2610	\N
+Middle East	Iraq	2000	2613	\N
+Middle East	Iraq	2001	2522	\N
+Middle East	Iraq	2002	2116	\N
+Middle East	Iraq	2003	1344	\N
+Middle East	Iraq	2004	2030	\N
+Middle East	Iraq	2005	1833	\N
+Middle East	Iraq	2006	1999	\N
+Middle East	Iraq	2007	2143	\N
+Middle East	Iraq	2008	2428	\N
+Middle East	Iraq	2009	2452	\N
+Middle East	Iraq	2010	2490	\N
+Middle East	Israel	1965	\N	81
+Middle East	Israel	1966	\N	84
+Middle East	Israel	1967	\N	88
+Middle East	Israel	1968	\N	92
+Middle East	Israel	1969	\N	96
+Middle East	Israel	1970	\N	100
+Middle East	Israel	1971	\N	104
+Middle East	Israel	1972	\N	108
+Middle East	Israel	1973	\N	116
+Middle East	Israel	1974	\N	118
+Middle East	Israel	1975	\N	122
+Middle East	Israel	1976	\N	129
+Middle East	Israel	1977	\N	136
+Middle East	Israel	1978	\N	145
+Middle East	Israel	1979	\N	160
+Middle East	Israel	1980	\N	157
+Middle East	Israel	1981	\N	160
+Middle East	Israel	1982	\N	155
+Middle East	Israel	1983	\N	147
+Middle East	Israel	1984	\N	138
+Middle East	Israel	1985	\N	132
+Middle East	Israel	1986	\N	137
+Middle East	Israel	1987	\N	153
+Middle East	Israel	1988	\N	168
+Middle East	Israel	1989	\N	172
+Middle East	Israel	1990	\N	177
+Middle East	Israel	1991	\N	182
+Middle East	Israel	1992	\N	193
+Middle East	Israel	1993	\N	198
+Middle East	Israel	1994	\N	220
+Middle East	Israel	1995	\N	248
+Middle East	Israel	1996	\N	248
+Middle East	Israel	1997	\N	245
+Middle East	Israel	1998	\N	261
+Middle East	Israel	1999	\N	278
+Middle East	Israel	2000	\N	279
+Middle East	Israel	2001	\N	260
+Middle East	Israel	2002	\N	260
+Middle East	Israel	2003	\N	265
+Middle East	Israel	2004	\N	250
+Middle East	Israel	2005	\N	256
+Middle East	Israel	2006	\N	249
+Middle East	Israel	2007	\N	257
+Middle East	Israel	2008	\N	252
+Middle East	Israel	2009	\N	237
+Middle East	Israel	2010	\N	234
+Middle East	Kuwait	1965	2371	104
+Middle East	Kuwait	1966	2505	101
+Middle East	Kuwait	1967	2522	98
+Middle East	Kuwait	1968	2656	94
+Middle East	Kuwait	1969	2819	92
+Middle East	Kuwait	1970	3036	89
+Middle East	Kuwait	1971	3253	88
+Middle East	Kuwait	1972	3339	95
+Middle East	Kuwait	1973	3080	90
+Middle East	Kuwait	1974	2603	82
+Middle East	Kuwait	1975	2132	63
+Middle East	Kuwait	1976	2199	75
+Middle East	Kuwait	1977	2024	73
+Middle East	Kuwait	1978	2182	78
+Middle East	Kuwait	1979	2623	88
+Middle East	Kuwait	1980	1757	86
+Middle East	Kuwait	1981	1187	114
+Middle East	Kuwait	1982	862	130
+Middle East	Kuwait	1983	1117	145
+Middle East	Kuwait	1984	1229	160
+Middle East	Kuwait	1985	1127	162
+Middle East	Kuwait	1986	1210	168
+Middle East	Kuwait	1987	1072	166
+Middle East	Kuwait	1988	1286	162
+Middle East	Kuwait	1989	1408	161
+Middle East	Kuwait	1990	964	106
+Middle East	Kuwait	1991	185	75
+Middle East	Kuwait	1992	1077	112
+Middle East	Kuwait	1993	1945	104
+Middle East	Kuwait	1994	2085	137
+Middle East	Kuwait	1995	2130	142
+Middle East	Kuwait	1996	2129	139
+Middle East	Kuwait	1997	2137	155
+Middle East	Kuwait	1998	2232	230
+Middle East	Kuwait	1999	2085	256
+Middle East	Kuwait	2000	2244	257
+Middle East	Kuwait	2001	2186	265
+Middle East	Kuwait	2002	2032	285
+Middle East	Kuwait	2003	2370	334
+Middle East	Kuwait	2004	2523	374
+Middle East	Kuwait	2005	2668	411
+Middle East	Kuwait	2006	2737	378
+Middle East	Kuwait	2007	2663	383
+Middle East	Kuwait	2008	2786	406
+Middle East	Kuwait	2009	2511	455
+Middle East	Kuwait	2010	2562	486
+Middle East	Oman	1965	\N	\N
+Middle East	Oman	1966	\N	\N
+Middle East	Oman	1967	57	\N
+Middle East	Oman	1968	241	\N
+Middle East	Oman	1969	327	\N
+Middle East	Oman	1970	332	\N
+Middle East	Oman	1971	294	\N
+Middle East	Oman	1972	282	\N
+Middle East	Oman	1973	293	\N
+Middle East	Oman	1974	290	\N
+Middle East	Oman	1975	341	\N
+Middle East	Oman	1976	367	\N
+Middle East	Oman	1977	340	\N
+Middle East	Oman	1978	314	\N
+Middle East	Oman	1979	295	\N
+Middle East	Oman	1980	285	\N
+Middle East	Oman	1981	330	\N
+Middle East	Oman	1982	338	\N
+Middle East	Oman	1983	391	\N
+Middle East	Oman	1984	419	\N
+Middle East	Oman	1985	502	\N
+Middle East	Oman	1986	564	\N
+Middle East	Oman	1987	588	\N
+Middle East	Oman	1988	625	\N
+Middle East	Oman	1989	651	\N
+Middle East	Oman	1990	695	\N
+Middle East	Oman	1991	716	\N
+Middle East	Oman	1992	748	\N
+Middle East	Oman	1993	785	\N
+Middle East	Oman	1994	819	\N
+Middle East	Oman	1995	868	\N
+Middle East	Oman	1996	897	\N
+Middle East	Oman	1997	909	\N
+Middle East	Oman	1998	905	\N
+Middle East	Oman	1999	911	\N
+Middle East	Oman	2000	961	\N
+Middle East	Oman	2001	959	\N
+Middle East	Oman	2002	900	\N
+Middle East	Oman	2003	822	\N
+Middle East	Oman	2004	783	\N
+Middle East	Oman	2005	777	\N
+Middle East	Oman	2006	738	\N
+Middle East	Oman	2007	710	\N
+Middle East	Oman	2008	757	\N
+Middle East	Oman	2009	813	\N
+Middle East	Oman	2010	865	\N
+Middle East	Qatar	1965	233	1
+Middle East	Qatar	1966	291	1
+Middle East	Qatar	1967	324	2
+Middle East	Qatar	1968	340	2
+Middle East	Qatar	1969	356	2
+Middle East	Qatar	1970	363	2
+Middle East	Qatar	1971	430	2
+Middle East	Qatar	1972	482	2
+Middle East	Qatar	1973	570	3
+Middle East	Qatar	1974	518	4
+Middle East	Qatar	1975	437	5
+Middle East	Qatar	1976	487	7
+Middle East	Qatar	1977	435	9
+Middle East	Qatar	1978	484	9
+Middle East	Qatar	1979	506	9
+Middle East	Qatar	1980	476	17
+Middle East	Qatar	1981	421	19
+Middle East	Qatar	1982	345	27
+Middle East	Qatar	1983	316	30
+Middle East	Qatar	1984	353	33
+Middle East	Qatar	1985	315	44
+Middle East	Qatar	1986	355	50
+Middle East	Qatar	1987	315	53
+Middle East	Qatar	1988	360	38
+Middle East	Qatar	1989	403	42
+Middle East	Qatar	1990	434	43
+Middle East	Qatar	1991	420	39
+Middle East	Qatar	1992	495	40
+Middle East	Qatar	1993	460	41
+Middle East	Qatar	1994	451	44
+Middle East	Qatar	1995	461	46
+Middle East	Qatar	1996	568	48
+Middle East	Qatar	1997	692	51
+Middle East	Qatar	1998	701	52
+Middle East	Qatar	1999	723	51
+Middle East	Qatar	2000	853	60
+Middle East	Qatar	2001	858	73
+Middle East	Qatar	2002	803	84
+Middle East	Qatar	2003	949	95
+Middle East	Qatar	2004	1082	106
+Middle East	Qatar	2005	1149	120
+Middle East	Qatar	2006	1241	135
+Middle East	Qatar	2007	1279	153
+Middle East	Qatar	2008	1449	173
+Middle East	Qatar	2009	1416	172
+Middle East	Qatar	2010	1655	193
+Middle East	Saudi Arabien	1965	2219	391
+Middle East	Saudi Arabien	1966	2615	394
+Middle East	Saudi Arabien	1967	2825	397
+Middle East	Saudi Arabien	1968	3081	400
+Middle East	Saudi Arabien	1969	3262	404
+Middle East	Saudi Arabien	1970	3851	408
+Middle East	Saudi Arabien	1971	4821	411
+Middle East	Saudi Arabien	1972	6070	438
+Middle East	Saudi Arabien	1973	7693	466
+Middle East	Saudi Arabien	1974	8618	488
+Middle East	Saudi Arabien	1975	7216	366
+Middle East	Saudi Arabien	1976	8762	428
+Middle East	Saudi Arabien	1977	9419	500
+Middle East	Saudi Arabien	1978	8554	537
+Middle East	Saudi Arabien	1979	9841	653
+Middle East	Saudi Arabien	1980	10270	607
+Middle East	Saudi Arabien	1981	10256	727
+Middle East	Saudi Arabien	1982	6961	805
+Middle East	Saudi Arabien	1983	4951	878
+Middle East	Saudi Arabien	1984	4534	929
+Middle East	Saudi Arabien	1985	3601	955
+Middle East	Saudi Arabien	1986	5208	949
+Middle East	Saudi Arabien	1987	4599	990
+Middle East	Saudi Arabien	1988	5720	987
+Middle East	Saudi Arabien	1989	5635	979
+Middle East	Saudi Arabien	1990	7105	1158
+Middle East	Saudi Arabien	1991	8820	1235
+Middle East	Saudi Arabien	1992	9098	1189
+Middle East	Saudi Arabien	1993	8962	1225
+Middle East	Saudi Arabien	1994	9084	1359
+Middle East	Saudi Arabien	1995	9145	1299
+Middle East	Saudi Arabien	1996	9299	1370
+Middle East	Saudi Arabien	1997	9482	1423
+Middle East	Saudi Arabien	1998	9502	1532
+Middle East	Saudi Arabien	1999	8853	1542
+Middle East	Saudi Arabien	2000	9491	1578
+Middle East	Saudi Arabien	2001	9209	1622
+Middle East	Saudi Arabien	2002	8928	1668
+Middle East	Saudi Arabien	2003	10164	1780
+Middle East	Saudi Arabien	2004	10638	1913
+Middle East	Saudi Arabien	2005	11114	2013
+Middle East	Saudi Arabien	2006	10853	2084
+Middle East	Saudi Arabien	2007	10449	2203
+Middle East	Saudi Arabien	2008	10846	2378
+Middle East	Saudi Arabien	2009	9893	2593
+Middle East	Saudi Arabien	2010	10007	2793
+Middle East	Syria	1965	\N	\N
+Middle East	Syria	1966	\N	\N
+Middle East	Syria	1967	\N	\N
+Middle East	Syria	1968	21	\N
+Middle East	Syria	1969	53	\N
+Middle East	Syria	1970	85	\N
+Middle East	Syria	1971	106	\N
+Middle East	Syria	1972	117	\N
+Middle East	Syria	1973	111	\N
+Middle East	Syria	1974	129	\N
+Middle East	Syria	1975	192	\N
+Middle East	Syria	1976	201	\N
+Middle East	Syria	1977	183	\N
+Middle East	Syria	1978	179	\N
+Middle East	Syria	1979	167	\N
+Middle East	Syria	1980	158	\N
+Middle East	Syria	1981	164	\N
+Middle East	Syria	1982	155	\N
+Middle East	Syria	1983	161	\N
+Middle East	Syria	1984	162	\N
+Middle East	Syria	1985	159	\N
+Middle East	Syria	1986	201	\N
+Middle East	Syria	1987	231	\N
+Middle East	Syria	1988	268	\N
+Middle East	Syria	1989	341	\N
+Middle East	Syria	1990	407	\N
+Middle East	Syria	1991	472	\N
+Middle East	Syria	1992	514	\N
+Middle East	Syria	1993	566	\N
+Middle East	Syria	1994	563	\N
+Middle East	Syria	1995	596	\N
+Middle East	Syria	1996	586	\N
+Middle East	Syria	1997	577	\N
+Middle East	Syria	1998	576	\N
+Middle East	Syria	1999	579	\N
+Middle East	Syria	2000	573	\N
+Middle East	Syria	2001	613	\N
+Middle East	Syria	2002	677	\N
+Middle East	Syria	2003	652	\N
+Middle East	Syria	2004	487	\N
+Middle East	Syria	2005	448	\N
+Middle East	Syria	2006	421	\N
+Middle East	Syria	2007	404	\N
+Middle East	Syria	2008	406	\N
+Middle East	Syria	2009	401	\N
+Middle East	Syria	2010	385	\N
+Middle East	United Arab Emirates	1965	282	\N
+Middle East	United Arab Emirates	1966	360	\N
+Middle East	United Arab Emirates	1967	382	\N
+Middle East	United Arab Emirates	1968	498	1
+Middle East	United Arab Emirates	1969	599	1
+Middle East	United Arab Emirates	1970	762	3
+Middle East	United Arab Emirates	1971	1106	3
+Middle East	United Arab Emirates	1972	1300	4
+Middle East	United Arab Emirates	1973	1456	6
+Middle East	United Arab Emirates	1974	1631	8
+Middle East	United Arab Emirates	1975	1696	13
+Middle East	United Arab Emirates	1976	1937	19
+Middle East	United Arab Emirates	1977	1998	28
+Middle East	United Arab Emirates	1978	1829	31
+Middle East	United Arab Emirates	1979	1831	42
+Middle East	United Arab Emirates	1980	1745	99
+Middle East	United Arab Emirates	1981	1540	110
+Middle East	United Arab Emirates	1982	1375	122
+Middle East	United Arab Emirates	1983	1296	123
+Middle East	United Arab Emirates	1984	1283	140
+Middle East	United Arab Emirates	1985	1260	172
+Middle East	United Arab Emirates	1986	1594	207
+Middle East	United Arab Emirates	1987	1603	227
+Middle East	United Arab Emirates	1988	1620	271
+Middle East	United Arab Emirates	1989	2024	285
+Middle East	United Arab Emirates	1990	2283	300
+Middle East	United Arab Emirates	1991	2639	365
+Middle East	United Arab Emirates	1992	2510	367
+Middle East	United Arab Emirates	1993	2443	382
+Middle East	United Arab Emirates	1994	2482	399
+Middle East	United Arab Emirates	1995	2401	400
+Middle East	United Arab Emirates	1996	2519	385
+Middle East	United Arab Emirates	1997	2620	393
+Middle East	United Arab Emirates	1998	2687	391
+Middle East	United Arab Emirates	1999	2583	383
+Middle East	United Arab Emirates	2000	2660	380
+Middle East	United Arab Emirates	2001	2561	381
+Middle East	United Arab Emirates	2002	2439	412
+Middle East	United Arab Emirates	2003	2722	453
+Middle East	United Arab Emirates	2004	2836	484
+Middle East	United Arab Emirates	2005	2922	504
+Middle East	United Arab Emirates	2006	3099	540
+Middle East	United Arab Emirates	2007	3001	580
+Middle East	United Arab Emirates	2008	3026	602
+Middle East	United Arab Emirates	2009	2723	593
+Middle East	United Arab Emirates	2010	2895	645
+Middle East	Yemen	1965	\N	\N
+Middle East	Yemen	1966	\N	\N
+Middle East	Yemen	1967	\N	\N
+Middle East	Yemen	1968	\N	\N
+Middle East	Yemen	1969	\N	\N
+Middle East	Yemen	1970	\N	\N
+Middle East	Yemen	1971	\N	\N
+Middle East	Yemen	1972	\N	\N
+Middle East	Yemen	1973	\N	\N
+Middle East	Yemen	1974	\N	\N
+Middle East	Yemen	1975	\N	\N
+Middle East	Yemen	1976	\N	\N
+Middle East	Yemen	1977	\N	\N
+Middle East	Yemen	1978	\N	\N
+Middle East	Yemen	1979	\N	\N
+Middle East	Yemen	1980	\N	\N
+Middle East	Yemen	1981	\N	\N
+Middle East	Yemen	1982	\N	\N
+Middle East	Yemen	1983	\N	\N
+Middle East	Yemen	1984	\N	\N
+Middle East	Yemen	1985	\N	\N
+Middle East	Yemen	1986	10	\N
+Middle East	Yemen	1987	26	\N
+Middle East	Yemen	1988	170	\N
+Middle East	Yemen	1989	178	\N
+Middle East	Yemen	1990	182	\N
+Middle East	Yemen	1991	197	\N
+Middle East	Yemen	1992	184	\N
+Middle East	Yemen	1993	209	\N
+Middle East	Yemen	1994	346	\N
+Middle East	Yemen	1995	351	\N
+Middle East	Yemen	1996	357	\N
+Middle East	Yemen	1997	375	\N
+Middle East	Yemen	1998	380	\N
+Middle East	Yemen	1999	405	\N
+Middle East	Yemen	2000	450	\N
+Middle East	Yemen	2001	453	\N
+Middle East	Yemen	2002	457	\N
+Middle East	Yemen	2003	451	\N
+Middle East	Yemen	2004	424	\N
+Middle East	Yemen	2005	421	\N
+Middle East	Yemen	2006	387	\N
+Middle East	Yemen	2007	341	\N
+Middle East	Yemen	2008	315	\N
+Middle East	Yemen	2009	307	\N
+Middle East	Yemen	2010	306	\N
+Middle East	Other Middle East	1965	61	176
+Middle East	Other Middle East	1966	66	185
+Middle East	Other Middle East	1967	73	195
+Middle East	Other Middle East	1968	78	204
+Middle East	Other Middle East	1969	78	216
+Middle East	Other Middle East	1970	79	227
+Middle East	Other Middle East	1971	76	251
+Middle East	Other Middle East	1972	71	270
+Middle East	Other Middle East	1973	69	279
+Middle East	Other Middle East	1974	68	282
+Middle East	Other Middle East	1975	62	291
+Middle East	Other Middle East	1976	59	319
+Middle East	Other Middle East	1977	59	342
+Middle East	Other Middle East	1978	55	374
+Middle East	Other Middle East	1979	51	436
+Middle East	Other Middle East	1980	55	456
+Middle East	Other Middle East	1981	54	522
+Middle East	Other Middle East	1982	52	541
+Middle East	Other Middle East	1983	50	542
+Middle East	Other Middle East	1984	50	596
+Middle East	Other Middle East	1985	50	633
+Middle East	Other Middle East	1986	51	660
+Middle East	Other Middle East	1987	52	662
+Middle East	Other Middle East	1988	53	708
+Middle East	Other Middle East	1989	53	738
+Middle East	Other Middle East	1990	52	803
+Middle East	Other Middle East	1991	53	775
+Middle East	Other Middle East	1992	54	841
+Middle East	Other Middle East	1993	53	916
+Middle East	Other Middle East	1994	52	950
+Middle East	Other Middle East	1995	52	995
+Middle East	Other Middle East	1996	50	998
+Middle East	Other Middle East	1997	50	1033
+Middle East	Other Middle East	1998	49	1044
+Middle East	Other Middle East	1999	48	1107
+Middle East	Other Middle East	2000	48	1112
+Middle East	Other Middle East	2001	47	1162
+Middle East	Other Middle East	2002	48	1215
+Middle East	Other Middle East	2003	48	1233
+Middle East	Other Middle East	2004	48	1265
+Middle East	Other Middle East	2005	185	1343
+Middle East	Other Middle East	2006	182	1238
+Middle East	Other Middle East	2007	194	1314
+Middle East	Other Middle East	2008	192	1442
+Middle East	Other Middle East	2009	192	1467
+Middle East	Other Middle East	2010	192	1540
