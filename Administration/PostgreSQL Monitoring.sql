@@ -392,6 +392,7 @@ mytest-> from pg_stat_statements order by avg_exec_time desc limit 20;
 -- monitor lock and find out locked row/tuple
 select * from pg_locks where relation='t'::regclass;
 
+/*
 
 mytest=> select * from pg_locks where relation='t'::regclass;
 -[ RECORD 1 ]------+-----------------
@@ -488,6 +489,8 @@ backend_xid      | 664
 backend_xmin     | 
 query            | update t set id=2 where id=1;
 backend_type     | client backend
+
+*/
 
 -- use the page=0, tuple=1 from pg_locks to form ctid
 -- the ctid will change once original transaction commit
