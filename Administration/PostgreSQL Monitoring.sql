@@ -299,12 +299,16 @@ mytest-> from pg_stat_user_tables;
 select pid, relid, phase, heap_blks_total, heap_blks_scanned, heap_blks_vacuumed
 from pg_stat_progress_vacuum;
 
+
 -- order by total_exec_time desc
 select query::varchar(50),calls,total_exec_time::int,rows,
     round(100.0*shared_blks_hit/nullif(shared_blks_hit+shared_blks_read, 0),2) as hit_percent
 from pg_stat_statements order by total_exec_time desc limit 20;
 
 /*
+
+mytest=> create extension pg_stat_statements;
+CREATE EXTENSION
 
 mytest=> select query::varchar(50),calls,total_exec_time::int,rows,
 mytest->     round(100.0*shared_blks_hit/nullif(shared_blks_hit+shared_blks_read, 0),2) as hit_percent
