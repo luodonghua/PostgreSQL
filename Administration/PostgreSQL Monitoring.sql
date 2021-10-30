@@ -389,5 +389,121 @@ mytest-> from pg_stat_statements order by avg_exec_time desc limit 20;
                         if the user might need to add a new page.
 */
 
+-- monitor lock and find out locked row/tuple
+select * from pg_locks where relation='t'::regclass;
+
+
+mytest=> select * from pg_locks where relation='t'::regclass;
+-[ RECORD 1 ]------+-----------------
+locktype           | relation
+database           | 16402
+relation           | 16455
+page               | 
+tuple              | 
+virtualxid         | 
+transactionid      | 
+classid            | 
+objid              | 
+objsubid           | 
+virtualtransaction | 7/2941
+pid                | 19208
+mode               | RowExclusiveLock
+granted            | t
+fastpath           | t
+-[ RECORD 2 ]------+-----------------
+locktype           | relation
+database           | 16402
+relation           | 16455
+page               | 
+tuple              | 
+virtualxid         | 
+transactionid      | 
+classid            | 
+objid              | 
+objsubid           | 
+virtualtransaction | 8/65
+pid                | 19813
+mode               | RowExclusiveLock
+granted            | t
+fastpath           | t
+-[ RECORD 3 ]------+-----------------
+locktype           | tuple
+database           | 16402
+relation           | 16455
+page               | 0
+tuple              | 1
+virtualxid         | 
+transactionid      | 
+classid            | 
+objid              | 
+objsubid           | 
+virtualtransaction | 8/65
+pid                | 19813
+mode               | ExclusiveLock
+granted            | t
+fastpath           | f
+
+mytest=> select * from pg_stat_activity where pid in (19208,19813);
+-[ RECORD 1 ]----+------------------------------
+datid            | 16402
+datname          | mytest
+pid              | 19813
+leader_pid       | 
+usesysid         | 16400
+usename          | postgres
+application_name | psql
+client_addr      | 116.14.204.216
+client_hostname  | 
+client_port      | 55195
+backend_start    | 2021-10-30 16:27:55.308849+00
+xact_start       | 2021-10-30 16:28:18.371692+00
+query_start      | 2021-10-30 16:28:18.371692+00
+state_change     | 2021-10-30 16:28:18.371694+00
+wait_event_type  | Lock
+wait_event       | transactionid
+state            | active
+backend_xid      | 665
+backend_xmin     | 664
+query            | update t set id=2 where id=1;
+backend_type     | client backend
+-[ RECORD 2 ]----+------------------------------
+datid            | 16402
+datname          | mytest
+pid              | 19208
+leader_pid       | 
+usesysid         | 16400
+usename          | postgres
+application_name | psql
+client_addr      | 116.14.204.216
+client_hostname  | 
+client_port      | 55182
+backend_start    | 2021-10-30 16:27:28.804831+00
+xact_start       | 2021-10-30 16:28:02.815479+00
+query_start      | 2021-10-30 16:28:12.075471+00
+state_change     | 2021-10-30 16:28:12.076033+00
+wait_event_type  | Client
+wait_event       | ClientRead
+state            | idle in transaction
+backend_xid      | 664
+backend_xmin     | 
+query            | update t set id=2 where id=1;
+backend_type     | client backend
+
+-- use the page=0, tuple=1 from pg_locks to form ctid
+-- the ctid will change once original transaction commit
+
+select ctid,* from t where (ctid::text::point)[0]::int = 0 and (ctid::text::point)[1]::int=1;
+
+/*
+
+mytest=> select ctid,* from t where (ctid::text::point)[0]::int = 0 and (ctid::text::point)[1]::int=1;
+
+ ctid  | id 
+-------+----
+ (0,1) |  1
+
+*/
+
+
 
 
