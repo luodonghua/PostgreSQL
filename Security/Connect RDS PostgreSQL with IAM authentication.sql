@@ -1,3 +1,5 @@
+-- Demostration here used Acloudguru sandbox, all accounts and token will be reset
+
 $ aws sts get-caller-identity --query 'Arn' --output text
 arn:aws:iam::853595176342:user/cloud_user
 
@@ -39,7 +41,6 @@ export RDSHOST="postgres-instance1.ck4o6l6o9kyg.us-east-1.rds.amazonaws.com"
 export PGPASSWORD="$(aws rds generate-db-auth-token --hostname $RDSHOST --port 5432 --region us-east-1 --username cloud_user )"
 
 /*
-
 # output below manually broken into multiple lines for reading
 echo $PGPASSWORD 
 postgres-instance1.ck4o6l6o9kyg.us-east-1.rds.amazonaws.com:5432/?
