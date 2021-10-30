@@ -96,4 +96,8 @@ mytest=> select ssl_is_used(), ssl_cipher();
 (1 row)
 
 
+mytest=> \conninfo
+You are connected to database "mytest" as user "cloud_user" on host "postgres-instance1.ck4o6l6o9kyg.us-east-1.rds.amazonaws.com" (address "44.198.93.36") at port "5432".
+SSL connection (protocol: TLSv1.2, cipher: ECDHE-RSA-AES256-GCM-SHA384, bits: 256, compression: off)
+
 
