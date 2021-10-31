@@ -1,0 +1,283 @@
+postgres=# select pg_backend_pid();
+ pg_backend_pid 
+----------------
+           2278
+(1 row)
+
+postgres=# \x 
+Expanded display is on.
+postgres=# select * from pg_stat_activity where pid = pg_backend_pid();
+-[ RECORD 1 ]----+-------------------------------------------------------------
+datid            | 14231
+datname          | postgres
+pid              | 2278
+leader_pid       | 
+usesysid         | 16384
+usename          | donghua
+application_name | psql
+client_addr      | 116.14.204.216
+client_hostname  | 
+client_port      | 51331
+backend_start    | 2021-10-31 13:01:34.664489+00
+xact_start       | 2021-10-31 13:05:35.6382+00
+query_start      | 2021-10-31 13:05:35.6382+00
+state_change     | 2021-10-31 13:05:35.638202+00
+wait_event_type  | 
+wait_event       | 
+state            | active
+backend_xid      | 
+backend_xmin     | 489
+query            | select * from pg_stat_activity where pid = pg_backend_pid();
+backend_type     | client backend
+
+
+[root@ip-10-1-1-164 ~]# ps -ef|grep 2278|grep -v grep
+postgres  2278  2107  0 13:01 ?        00:00:00 postgres: donghua postgres 116.14.204.216(51331) idle
+
+[root@ip-10-1-1-164 ~]# pmap 2278
+2278:   postgres: donghua postgres 116.14.204.216(51331) idle
+0000000000400000   7196K r-x-- postgres
+0000000000d06000      4K r---- postgres
+0000000000d07000     60K rw--- postgres
+0000000000d16000    204K rw---   [ anon ]
+00000000022b2000    360K rw---   [ anon ]
+000000000230c000   1156K rw---   [ anon ]
+00007fa0b8e6c000     44K r-x-- libnss_files-2.26.so
+00007fa0b8e77000   2044K ----- libnss_files-2.26.so
+00007fa0b9076000      4K r---- libnss_files-2.26.so
+00007fa0b9077000      4K rw--- libnss_files-2.26.so
+00007fa0b9078000     24K rw---   [ anon ]
+00007fa0b907e000 145624K rw-s- zero (deleted)
+00007fa0c1eb4000 110400K r---- locale-archive
+00007fa0c8a84000     60K r-x-- libbz2.so.1.0.6
+00007fa0c8a93000   2044K ----- libbz2.so.1.0.6
+00007fa0c8c92000      4K r---- libbz2.so.1.0.6
+00007fa0c8c93000      4K rw--- libbz2.so.1.0.6
+00007fa0c8c94000     92K r-x-- libelf-0.176.so
+00007fa0c8cab000   2044K ----- libelf-0.176.so
+00007fa0c8eaa000      4K r---- libelf-0.176.so
+00007fa0c8eab000      4K rw--- libelf-0.176.so
+00007fa0c8eac000    396K r-x-- libpcre.so.1.2.0
+00007fa0c8f0f000   2044K ----- libpcre.so.1.2.0
+00007fa0c910e000      4K r---- libpcre.so.1.2.0
+00007fa0c910f000      4K rw--- libpcre.so.1.2.0
+00007fa0c9110000     16K r-x-- libattr.so.1.1.0
+00007fa0c9114000   2044K ----- libattr.so.1.1.0
+00007fa0c9313000      4K r---- libattr.so.1.1.0
+00007fa0c9314000      4K rw--- libattr.so.1.1.0
+00007fa0c9315000     32K r-x-- libcrypt-2.26.so
+00007fa0c931d000   2044K ----- libcrypt-2.26.so
+00007fa0c951c000      4K r---- libcrypt-2.26.so
+00007fa0c951d000      4K rw--- libcrypt-2.26.so
+00007fa0c951e000    184K rw---   [ anon ]
+00007fa0c954c000     16K r-x-- libcap-ng.so.0.0.0
+00007fa0c9550000   2048K ----- libcap-ng.so.0.0.0
+00007fa0c9750000      4K r---- libcap-ng.so.0.0.0
+00007fa0c9751000      4K rw--- libcap-ng.so.0.0.0
+00007fa0c9752000    316K r-x-- libdw-0.176.so
+00007fa0c97a1000   2044K ----- libdw-0.176.so
+00007fa0c99a0000      8K r---- libdw-0.176.so
+00007fa0c99a2000      4K rw--- libdw-0.176.so
+00007fa0c99a3000     16K r-x-- libgpg-error.so.0.10.0
+00007fa0c99a7000   2044K ----- libgpg-error.so.0.10.0
+00007fa0c9ba6000      4K r---- libgpg-error.so.0.10.0
+00007fa0c9ba7000      4K rw--- libgpg-error.so.0.10.0
+00007fa0c9ba8000    500K r-x-- libgcrypt.so.11.8.2
+00007fa0c9c25000   2044K ----- libgcrypt.so.11.8.2
+00007fa0c9e24000      4K r---- libgcrypt.so.11.8.2
+00007fa0c9e25000     12K rw--- libgcrypt.so.11.8.2
+00007fa0c9e28000      4K rw---   [ anon ]
+00007fa0c9e29000     76K r-x-- liblz4.so.1.7.5
+00007fa0c9e3c000   2044K ----- liblz4.so.1.7.5
+00007fa0ca03b000      4K r---- liblz4.so.1.7.5
+00007fa0ca03c000      4K rw--- liblz4.so.1.7.5
+00007fa0ca03d000    144K r-x-- libselinux.so.1
+00007fa0ca061000   2044K ----- libselinux.so.1
+00007fa0ca260000      4K r---- libselinux.so.1
+00007fa0ca261000      4K rw--- libselinux.so.1
+00007fa0ca262000      8K rw---   [ anon ]
+00007fa0ca264000     16K r-x-- libcap.so.2.22
+00007fa0ca268000   2044K ----- libcap.so.2.22
+00007fa0ca467000      4K r---- libcap.so.2.22
+00007fa0ca468000      4K rw--- libcap.so.2.22
+00007fa0ca469000  20296K r-x-- libicudata.so.50.2
+00007fa0cb83b000   2044K ----- libicudata.so.50.2
+00007fa0cba3a000      4K r---- libicudata.so.50.2
+00007fa0cba3b000      4K rw--- libicudata.so.50.2
+00007fa0cba3c000     84K r-x-- libgcc_s-7-20180712.so.1
+00007fa0cba51000   2044K ----- libgcc_s-7-20180712.so.1
+00007fa0cbc50000      4K r---- libgcc_s-7-20180712.so.1
+00007fa0cbc51000      4K rw--- libgcc_s-7-20180712.so.1
+00007fa0cbc52000   1480K r-x-- libstdc++.so.6.0.24
+00007fa0cbdc4000   2048K ----- libstdc++.so.6.0.24
+00007fa0cbfc4000     40K r---- libstdc++.so.6.0.24
+00007fa0cbfce000      8K rw--- libstdc++.so.6.0.24
+00007fa0cbfd0000     16K rw---   [ anon ]
+00007fa0cbfd4000    224K r-x-- libnspr4.so
+00007fa0cc00c000   2044K ----- libnspr4.so
+00007fa0cc20b000      4K r---- libnspr4.so
+00007fa0cc20c000      8K rw--- libnspr4.so
+00007fa0cc20e000      8K rw---   [ anon ]
+00007fa0cc210000     16K r-x-- libplc4.so
+00007fa0cc214000   2044K ----- libplc4.so
+00007fa0cc413000      4K r---- libplc4.so
+00007fa0cc414000      4K rw--- libplc4.so
+00007fa0cc415000     12K r-x-- libplds4.so
+00007fa0cc418000   2044K ----- libplds4.so
+00007fa0cc617000      4K r---- libplds4.so
+00007fa0cc618000      4K rw--- libplds4.so
+00007fa0cc619000    160K r-x-- libnssutil3.so
+00007fa0cc641000   2044K ----- libnssutil3.so
+00007fa0cc840000     28K r---- libnssutil3.so
+00007fa0cc847000      4K rw--- libnssutil3.so
+00007fa0cc848000   1148K r-x-- libnss3.so
+00007fa0cc967000   2048K ----- libnss3.so
+00007fa0ccb67000     20K r---- libnss3.so
+00007fa0ccb6c000     12K rw--- libnss3.so
+00007fa0ccb6f000      4K rw---   [ anon ]
+00007fa0ccb70000    140K r-x-- libsmime3.so
+00007fa0ccb93000   2044K ----- libsmime3.so
+00007fa0ccd92000     12K r---- libsmime3.so
+00007fa0ccd95000      4K rw--- libsmime3.so
+00007fa0ccd96000    340K r-x-- libssl3.so
+00007fa0ccdeb000   2044K ----- libssl3.so
+00007fa0ccfea000     16K r---- libssl3.so
+00007fa0ccfee000      4K rw--- libssl3.so
+00007fa0ccfef000      4K rw---   [ anon ]
+00007fa0ccff0000    108K r-x-- libsasl2.so.3.0.0
+00007fa0cd00b000   2048K ----- libsasl2.so.3.0.0
+00007fa0cd20b000      4K r---- libsasl2.so.3.0.0
+00007fa0cd20c000      4K rw--- libsasl2.so.3.0.0
+00007fa0cd20d000     52K r-x-- liblber-2.4.so.2.10.7
+00007fa0cd21a000   2048K ----- liblber-2.4.so.2.10.7
+00007fa0cd41a000      4K r---- liblber-2.4.so.2.10.7
+00007fa0cd41b000      4K rw--- liblber-2.4.so.2.10.7
+00007fa0cd41c000     76K r-x-- libresolv-2.26.so
+00007fa0cd42f000   2044K ----- libresolv-2.26.so
+00007fa0cd62e000      4K r---- libresolv-2.26.so
+00007fa0cd62f000      4K rw--- libresolv-2.26.so
+00007fa0cd630000      8K rw---   [ anon ]
+00007fa0cd632000     12K r-x-- libkeyutils.so.1.5
+00007fa0cd635000   2044K ----- libkeyutils.so.1.5
+00007fa0cd834000      4K r---- libkeyutils.so.1.5
+00007fa0cd835000      4K rw--- libkeyutils.so.1.5
+00007fa0cd836000     56K r-x-- libkrb5support.so.0.1
+00007fa0cd844000   2044K ----- libkrb5support.so.0.1
+00007fa0cda43000      4K r---- libkrb5support.so.0.1
+00007fa0cda44000      4K rw--- libkrb5support.so.0.1
+00007fa0cda45000    188K r-x-- libk5crypto.so.3.1
+00007fa0cda74000   2044K ----- libk5crypto.so.3.1
+00007fa0cdc73000      8K r---- libk5crypto.so.3.1
+00007fa0cdc75000      4K rw--- libk5crypto.so.3.1
+00007fa0cdc76000     12K r-x-- libcom_err.so.2.1
+00007fa0cdc79000   2044K ----- libcom_err.so.2.1
+00007fa0cde78000      4K r---- libcom_err.so.2.1
+00007fa0cde79000      4K rw--- libcom_err.so.2.1
+00007fa0cde7a000    848K r-x-- libkrb5.so.3.3
+00007fa0cdf4e000   2044K ----- libkrb5.so.3.3
+00007fa0ce14d000     56K r---- libkrb5.so.3.3
+00007fa0ce15b000     12K rw--- libkrb5.so.3.3
+00007fa0ce15e000    120K r-x-- libaudit.so.1.0.0
+00007fa0ce17c000   2044K ----- libaudit.so.1.0.0
+00007fa0ce37b000      4K r---- libaudit.so.1.0.0
+00007fa0ce37c000      4K rw--- libaudit.so.1.0.0
+00007fa0ce37d000     40K rw---   [ anon ]
+00007fa0ce387000    148K r-x-- liblzma.so.5.2.2
+00007fa0ce3ac000   2044K ----- liblzma.so.5.2.2
+00007fa0ce5ab000      4K r---- liblzma.so.5.2.2
+00007fa0ce5ac000      4K rw--- liblzma.so.5.2.2
+00007fa0ce5ad000     80K r-x-- libz.so.1.2.7
+00007fa0ce5c1000   2044K ----- libz.so.1.2.7
+00007fa0ce7c0000      4K r---- libz.so.1.2.7
+00007fa0ce7c1000      4K rw--- libz.so.1.2.7
+00007fa0ce7c2000   1668K r-x-- libc-2.26.so
+00007fa0ce963000   2048K ----- libc-2.26.so
+00007fa0ceb63000     16K r---- libc-2.26.so
+00007fa0ceb67000      8K rw--- libc-2.26.so
+00007fa0ceb69000     16K rw---   [ anon ]
+00007fa0ceb6d000    176K r-x-- libsystemd.so.0.6.0
+00007fa0ceb99000   2044K ----- libsystemd.so.0.6.0
+00007fa0ced98000      4K r---- libsystemd.so.0.6.0
+00007fa0ced99000      4K rw--- libsystemd.so.0.6.0
+00007fa0ced9a000   1376K r-x-- libicuuc.so.50.2
+00007fa0ceef2000   2048K ----- libicuuc.so.50.2
+00007fa0cf0f2000     64K r---- libicuuc.so.50.2
+00007fa0cf102000      4K rw--- libicuuc.so.50.2
+00007fa0cf103000     16K rw---   [ anon ]
+00007fa0cf107000   1920K r-x-- libicui18n.so.50.2
+00007fa0cf2e7000   2048K ----- libicui18n.so.50.2
+00007fa0cf4e7000     44K r---- libicui18n.so.50.2
+00007fa0cf4f2000      8K rw--- libicui18n.so.50.2
+00007fa0cf4f4000      4K rw---   [ anon ]
+00007fa0cf4f5000    316K r-x-- libldap-2.4.so.2.10.7
+00007fa0cf544000   2048K ----- libldap-2.4.so.2.10.7
+00007fa0cf744000      8K r---- libldap-2.4.so.2.10.7
+00007fa0cf746000      4K rw--- libldap-2.4.so.2.10.7
+00007fa0cf747000   1276K r-x-- libm-2.26.so
+00007fa0cf886000   2044K ----- libm-2.26.so
+00007fa0cfa85000      4K r---- libm-2.26.so
+00007fa0cfa86000      4K rw--- libm-2.26.so
+00007fa0cfa87000     12K r-x-- libdl-2.26.so
+00007fa0cfa8a000   2044K ----- libdl-2.26.so
+00007fa0cfc89000      4K r---- libdl-2.26.so
+00007fa0cfc8a000      4K rw--- libdl-2.26.so
+00007fa0cfc8b000     28K r-x-- librt-2.26.so
+00007fa0cfc92000   2044K ----- librt-2.26.so
+00007fa0cfe91000      4K r---- librt-2.26.so
+00007fa0cfe92000      4K rw--- librt-2.26.so
+00007fa0cfe93000    288K r-x-- libgssapi_krb5.so.2.2
+00007fa0cfedb000   2048K ----- libgssapi_krb5.so.2.2
+00007fa0d00db000      8K r---- libgssapi_krb5.so.2.2
+00007fa0d00dd000      8K rw--- libgssapi_krb5.so.2.2
+00007fa0d00df000   2212K r-x-- libcrypto.so.1.0.2k
+00007fa0d0308000   2044K ----- libcrypto.so.1.0.2k
+00007fa0d0507000    112K r---- libcrypto.so.1.0.2k
+00007fa0d0523000     52K rw--- libcrypto.so.1.0.2k
+00007fa0d0530000     16K rw---   [ anon ]
+00007fa0d0534000    400K r-x-- libssl.so.1.0.2k
+00007fa0d0598000   2048K ----- libssl.so.1.0.2k
+00007fa0d0798000     16K r---- libssl.so.1.0.2k
+00007fa0d079c000     28K rw--- libssl.so.1.0.2k
+00007fa0d07a3000     52K r-x-- libpam.so.0.83.1
+00007fa0d07b0000   2044K ----- libpam.so.0.83.1
+00007fa0d09af000      4K r---- libpam.so.0.83.1
+00007fa0d09b0000      4K rw--- libpam.so.0.83.1
+00007fa0d09b1000   1336K r-x-- libxml2.so.2.9.1
+00007fa0d0aff000   2044K ----- libxml2.so.2.9.1
+00007fa0d0cfe000     32K r---- libxml2.so.2.9.1
+00007fa0d0d06000      8K rw--- libxml2.so.2.9.1
+00007fa0d0d08000      8K rw---   [ anon ]
+00007fa0d0d0a000     96K r-x-- libpthread-2.26.so
+00007fa0d0d22000   2048K ----- libpthread-2.26.so
+00007fa0d0f22000      4K r---- libpthread-2.26.so
+00007fa0d0f23000      4K rw--- libpthread-2.26.so
+00007fa0d0f24000     16K rw---   [ anon ]
+00007fa0d0f28000    144K r-x-- ld-2.26.so
+00007fa0d10c7000    392K rw---   [ anon ]
+00007fa0d1129000    104K rw---   [ anon ]
+00007fa0d1146000     16K rw-s- PostgreSQL.2032231456
+00007fa0d114a000      4K rw-s-   [ shmid=0x38000 ]
+00007fa0d114b000      4K r---- ld-2.26.so
+00007fa0d114c000      4K rw--- ld-2.26.so
+00007fa0d114d000      4K rw---   [ anon ]
+00007ffd55872000    132K rw---   [ stack ]
+00007ffd559aa000     12K r----   [ anon ]
+00007ffd559ad000      8K r-x--   [ anon ]
+ffffffffff600000      4K r-x--   [ anon ]
+ total           403776K
+
+
+[root@ip-10-1-1-164 ~]# ps -ef|grep postmaster|grep -v grep
+postgres  2107     1  0 12:56 ?        00:00:00 /usr/bin/postmaster -D /var/lib/pgsql/data
+
+
+[root@ip-10-1-1-164 ~]# pstree -p -h 2107
+postmaster(2107)─┬─postmaster(2111)
+                 ├─postmaster(2113)
+                 ├─postmaster(2114)
+                 ├─postmaster(2115)
+                 ├─postmaster(2116)
+                 ├─postmaster(2117)
+                 ├─postmaster(2118)
+                 └─postmaster(2278)
+
