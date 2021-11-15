@@ -1340,3 +1340,18 @@ mytest=> select pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn(), pg_last_xac
 
 */
 
+/*
+
+# Bash script to generate the workload in PG10
+
+i=1
+while [ $i -le 100000 ]
+do
+  psql -c "update t1 set id = $i"
+  i=$(( $i + 1 ))
+  echo $i
+done
+
+*/
+
+
