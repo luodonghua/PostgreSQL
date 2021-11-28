@@ -1354,8 +1354,31 @@ done
 
 */
 
+/*
+
+# PSQL script to generate the workload in PG10
+
+mytest=> update t1 set updated=current_timestamp returning *;
+ id |          updated           
+----+----------------------------
+  1 | 2021-11-16 02:04:14.540675
+(1 row)
+
+UPDATE 1
+mytest=> \watch 1
+Tue Nov 16 10:04:18 2021 (every 1s)
+
+
+*/
+
+
 
 SELECT extract(epoch from now() - pg_last_xact_replay_timestamp()) AS replica_lag;
+\watch 1
+
+select last_msg_receipt_time,pg_last_xact_replay_timestamp(), 
+extract(epoch from now() - pg_last_xact_replay_timestamp()) AS replica_lag 
+from pg_stat_wal_receiver;
 \watch 1
 
 
