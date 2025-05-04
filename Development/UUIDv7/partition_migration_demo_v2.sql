@@ -4,15 +4,18 @@
 
 -- Enable UUID extension if not already enabled
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- First, let's create our original transaction table with monthly partitioning
 CREATE TABLE IF NOT EXISTS transactions_original (
-    txn_id BIGSERIAL PRIMARY KEY,
+    txn_id BIGSERIAL,
     amount DECIMAL(15, 2) NOT NULL,
     description TEXT,
     customer_id INTEGER NOT NULL,
-    updated_on TIMESTAMP NOT NULL
+    updated_on TIMESTAMP NOT NULL,
+    PRIMARY KEY (txn_id,updated_on)
 ) PARTITION BY RANGE (updated_on);
+
 
 -- Create a few monthly partitions for the original table
 CREATE TABLE transactions_original_202401 PARTITION OF transactions_original
@@ -41,84 +44,64 @@ VALUES
 -- - Next 48 bits (6 bytes): Original txn_id (bigserial) value
 -- - Last 16 bits (2 bytes): Random data for uniqueness
 
+-- Fixed custom_uuidv7 function that generates valid UUIDs
 CREATE OR REPLACE FUNCTION custom_uuidv7(p_timestamp TIMESTAMP, p_original_id BIGINT)
 RETURNS UUID AS $$
-DECLARE
-    v_time_ms BIGINT;
-    v_time_bytes BYTEA;
-    v_id_bytes BYTEA;
-    v_random_bytes BYTEA;
-    v_result UUID;
-BEGIN
-    -- Convert timestamp to milliseconds since Unix epoch
-    v_time_ms := (EXTRACT(EPOCH FROM p_timestamp) * 1000)::BIGINT;
-    
-    -- Convert time_ms to 6 bytes (48 bits)
-    v_time_bytes := E'\\x' || lpad(to_hex(v_time_ms), 12, '0');
-    
-    -- Convert original ID to 6 bytes (48 bits)
-    -- Ensure it fits within 48 bits (max value 2^48-1)
-    IF p_original_id > 281474976710655 THEN -- 2^48-1
-        RAISE EXCEPTION 'Original ID too large to fit in 48 bits: %', p_original_id;
-    END IF;
-    v_id_bytes := E'\\x' || lpad(to_hex(p_original_id), 12, '0');
-    
-    -- Generate 2 random bytes for the last part
-    v_random_bytes := gen_random_bytes(2);
-    
-    -- Combine all parts with version (7) and variant (2) bits
-    -- Version 7 is set in the 13th hex digit (first digit of 7th byte)
-    -- Variant 2 is set in the 17th hex digit (first digit of 9th byte)
-    v_result := (
-        v_time_bytes ||                                                -- 6 bytes: timestamp
-        E'\\x70' ||                                                    -- 1 byte: version 7 (0111xxxx)
-        E'\\x' || lpad(to_hex((get_byte(gen_random_bytes(1), 0) & 15)), 2, '0') || -- 1 byte: random with version bits
-        E'\\x' || lpad(to_hex((get_byte(gen_random_bytes(1), 0) & 63) | 128), 2, '0') || -- 1 byte: variant 2 (10xxxxxx)
-        substring(v_id_bytes FROM 3 FOR 5) ||                          -- 5 bytes: original ID (bytes 2-6)
-        v_random_bytes                                                 -- 2 bytes: random data
-    )::UUID;
-    
-    RETURN v_result;
-END;
-$$ LANGUAGE plpgsql;
+  -- First, convert the timestamp to milliseconds since epoch
+  WITH base_uuid AS (
+    SELECT gen_random_uuid() AS uuid
+  ),
+  time_ms AS (
+    SELECT (EXTRACT(EPOCH FROM p_timestamp AT TIME ZONE 'UTC') * 1000)::BIGINT AS ms
+  ),
+  -- Format the timestamp and ID parts
+  parts AS (
+    SELECT
+      lpad(to_hex((SELECT ms FROM time_ms)), 12, '0') AS time_hex,
+      lpad(to_hex(p_original_id), 10, '0') AS id_hex
+  )
+  -- Construct the final UUID with the correct format
+  SELECT (
+    substring((SELECT time_hex FROM parts) FROM 1 FOR 8) || '-' ||
+    substring((SELECT time_hex FROM parts) FROM 9 FOR 4) || '-' ||
+    '7' || substring(replace((SELECT uuid FROM base_uuid)::text, '-', '') FROM 14 FOR 3) || '-' ||
+    '8' || substring(replace((SELECT uuid FROM base_uuid)::text, '-', '') FROM 18 FOR 3) || '-' ||
+    substring((SELECT id_hex FROM parts) FROM 1 FOR 10) ||
+    substring(replace((SELECT uuid FROM base_uuid)::text, '-', '') FROM 30 FOR 2)
+  )::UUID;
+$$ LANGUAGE sql volatile parallel safe;
 
--- Create functions to extract information from our custom UUID
+-- Function to generate UUIDv7 boundary values for partitioning
+CREATE OR REPLACE FUNCTION uuidv7_boundary(timestamptz) RETURNS uuid
+AS $$
+  /*
+   * uuid fields: version=0b0111, variant=0b10
+   * Note: extract(epoch from timestamptz) always returns UTC seconds
+   */
+  select encode(
+    overlay('\x00000000000070008000000000000000'::bytea
+      placing substring(int8send(floor(extract(epoch from $1) * 1000)::bigint) from 3)
+        from 1 for 6),
+    'hex')::uuid;
+$$ LANGUAGE sql stable strict parallel safe;
+
+-- Updated function to extract timestamp from UUID with proper time zone handling
 CREATE OR REPLACE FUNCTION extract_timestamp_from_uuid(p_uuid UUID)
 RETURNS TIMESTAMP AS $$
-DECLARE
-    v_hex TEXT;
-    v_time_ms BIGINT;
-BEGIN
-    -- Extract the first 6 bytes (12 hex chars) from UUID
-    v_hex := substring(replace(p_uuid::TEXT, '-', '') FROM 1 FOR 12);
-    
-    -- Convert hex to bigint (milliseconds since epoch)
-    v_time_ms := ('x' || v_hex)::bit(48)::bigint;
-    
-    -- Convert milliseconds to timestamp
-    RETURN to_timestamp(v_time_ms / 1000.0);
-END;
-$$ LANGUAGE plpgsql;
+  -- Extract the first 6 bytes (12 hex chars) from UUID
+  -- Convert hex to bigint (milliseconds since epoch)
+  -- Convert milliseconds to timestamp
+  SELECT to_timestamp(
+    ('x' || substring(replace(p_uuid::TEXT, '-', '') FROM 1 FOR 12))::bit(48)::bigint / 1000.0
+  ) AT TIME ZONE 'UTC';  -- Add explicit time zone conversion
+$$ LANGUAGE sql volatile parallel safe;
 
+-- Updated function to extract original ID from UUID
 CREATE OR REPLACE FUNCTION extract_original_id_from_uuid(p_uuid UUID)
 RETURNS BIGINT AS $$
-DECLARE
-    v_hex TEXT;
-    v_original_id BIGINT;
-BEGIN
-    -- Extract bytes 9-14 (original ID portion) from UUID
-    -- This skips the first 8 bytes (16 hex chars) and takes the next 6 bytes (12 hex chars)
-    v_hex := substring(replace(p_uuid::TEXT, '-', '') FROM 17 FOR 10);
-    
-    -- Add leading zeros to make it 12 hex chars (6 bytes)
-    v_hex := '00' || v_hex;
-    
-    -- Convert hex to bigint
-    v_original_id := ('x' || v_hex)::bit(48)::bigint;
-    
-    RETURN v_original_id;
-END;
-$$ LANGUAGE plpgsql;
+  -- Extract the original ID portion from UUID
+  SELECT ('x' || substring(replace(p_uuid::TEXT, '-', '') FROM 21 FOR 10))::bit(40)::bigint;
+$$ LANGUAGE sql volatile parallel safe;
 
 -- Create the new transaction table with custom UUIDv7-based partitioning
 CREATE TABLE IF NOT EXISTS transactions_new_v2 (
@@ -127,21 +110,31 @@ CREATE TABLE IF NOT EXISTS transactions_new_v2 (
     description TEXT,
     customer_id INTEGER NOT NULL,
     updated_on TIMESTAMP NOT NULL
-) PARTITION BY RANGE ((txn_id::text));
+) PARTITION BY RANGE ((txn_id));
+
+
+/*
+You can use any of these formats to specify UTC:
+• '2024-01-01 00:00:00+00' (explicit UTC offset)
+• '2024-01-01 00:00:00Z' (Z suffix for UTC)
+• '2024-01-01 00:00:00 UTC' (UTC timezone name)
+**/
 
 -- Create partitions for the new table
 -- UUIDv7 is time-ordered, so we can create partitions that roughly correspond to months
--- For January 2024 (approximate UUIDv7 range)
+-- For January 2024 (UUIDv7 range)
+
 CREATE TABLE transactions_new_v2_202401 PARTITION OF transactions_new_v2
-    FOR VALUES FROM ('017aa000-0000-7000-8000-000000000000') TO ('017b1000-0000-7000-8000-000000000000');
+    FOR VALUES FROM (uuidv7_boundary('2024-01-01 00:00:00+00')) TO (uuidv7_boundary('2024-02-01 00:00:00+00'));
     
--- For February 2024 (approximate UUIDv7 range)
+-- For February 2024 (UUIDv7 range)
 CREATE TABLE transactions_new_v2_202402 PARTITION OF transactions_new_v2
-    FOR VALUES FROM ('017b1000-0000-7000-8000-000000000000') TO ('017b8000-0000-7000-8000-000000000000');
+    FOR VALUES FROM (uuidv7_boundary('2024-02-01 00:00:00+00')) TO (uuidv7_boundary('2024-03-01 00:00:00+00'));
     
--- For March 2024 (approximate UUIDv7 range)
+-- For March 2024 (UUIDv7 range)
 CREATE TABLE transactions_new_v2_202403 PARTITION OF transactions_new_v2
-    FOR VALUES FROM ('017b8000-0000-7000-8000-000000000000') TO ('017bf000-0000-7000-8000-000000000000');
+    FOR VALUES FROM (uuidv7_boundary('2024-03-01 00:00:00+00')) TO (uuidv7_boundary('2024-04-01 00:00:00+00'));
+
 
 -- Migration function to move data from original table to new table
 CREATE OR REPLACE FUNCTION migrate_transactions_v2()
@@ -196,7 +189,7 @@ SELECT
         ELSE 'MISMATCH'
     END AS id_verification,
     CASE 
-        WHEN date_trunc('millisecond', o.updated_on) = date_trunc('millisecond', extract_timestamp_from_uuid(n.txn_id)) THEN 'MATCH'
+        WHEN date_trunc('second', o.updated_on) = date_trunc('second', extract_timestamp_from_uuid(n.txn_id)) THEN 'MATCH'
         ELSE 'MISMATCH'
     END AS timestamp_verification
 FROM 
@@ -220,10 +213,10 @@ FROM
     transactions_new_v2;
 
 -- Query the view to see the embedded data
-SELECT * FROM transaction_embedded_data;
+SELECT txn_id,embedded_original_id,embedded_timestamp,updated_on FROM transaction_embedded_data;
 
 -- Test function to generate a new custom UUIDv7 for new transactions
-CREATE OR REPLACE FUNCTION generate_new_transaction_id(p_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
+CREATE OR REPLACE FUNCTION generate_new_transaction_id(p_timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)
 RETURNS UUID AS $$
 DECLARE
     -- Get the next value from the original sequence
@@ -231,11 +224,29 @@ DECLARE
 BEGIN
     -- Get the next value from the original sequence
     SELECT nextval(pg_get_serial_sequence('transactions_original', 'txn_id')) INTO v_next_id;
-    
+
     -- Generate and return the custom UUID
-    RETURN custom_uuidv7(p_timestamp, v_next_id);
+    -- Cast the timestamptz to timestamp to ensure consistent timezone handling
+    RETURN custom_uuidv7(p_timestamp::TIMESTAMP, v_next_id);
 END;
 $$ LANGUAGE plpgsql;
+
+-- Optimized SQL function to generate a new custom UUIDv7 for new transactions
+CREATE OR REPLACE FUNCTION generate_new_transaction_id(p_timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)
+RETURNS UUID AS $$
+  -- Get the next value from the original sequence and generate the UUID in a single SQL statement
+  SELECT custom_uuidv7(
+    p_timestamp::TIMESTAMP,
+    nextval(pg_get_serial_sequence('transactions_original', 'txn_id'))
+  );
+$$ LANGUAGE sql volatile parallel safe;
+
+
+
+-- For May 2025 (UUIDv7 range)
+CREATE TABLE transactions_new_v2_202505 PARTITION OF transactions_new_v2
+    FOR VALUES FROM (uuidv7_boundary('2025-05-01 00:00:00+00')) TO (uuidv7_boundary('2025-06-01 00:00:00+00'));
+
 
 -- Example of inserting a new record with the custom UUID generator
 INSERT INTO transactions_new_v2 (
@@ -258,8 +269,33 @@ SELECT
     embedded_timestamp,
     embedded_original_id,
     amount,
-    description
+    description,
+    updated_on
 FROM 
     transaction_embedded_data
 WHERE 
     description = 'New Purchase with Custom UUID';
+
+
+-- Function to test UUID embedding and extraction
+CREATE OR REPLACE FUNCTION test_uuid_embedding()
+RETURNS TABLE(original_id BIGINT, embedded_uuid UUID, extracted_id BIGINT) AS $$
+BEGIN
+  FOR i IN 1..10 LOOP
+    RETURN QUERY
+    SELECT 
+      i::BIGINT AS original_id,
+      custom_uuidv7(CURRENT_TIMESTAMP::timestamp, i) AS embedded_uuid,
+      extract_original_id_from_uuid(custom_uuidv7(CURRENT_TIMESTAMP::timestamp, i)) AS extracted_id;
+  END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Test the embedding and extraction
+SELECT * FROM test_uuid_embedding();
+
+-- max txn_id is 1099511627775
+select extract_original_id_from_uuid(custom_uuidv7('2020-01-01 01:01:34'::timestamp,(2^40-1)::bigint)),2^40-1 as max_id;;
+select extract_timestamp_from_uuid(custom_uuidv7('2020-01-01 01:01:34'::timestamp,(2^40-1)::bigint)),'2020-01-01 01:01:34'::timestamp as timestamp;;
+
+
