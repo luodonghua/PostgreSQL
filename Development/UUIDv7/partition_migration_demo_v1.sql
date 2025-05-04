@@ -5,6 +5,8 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- First, let's create our original transaction table with monthly partitioning
+-- This example mimics the "common" expectations on the partitions.
+-- Indeed updated_on is frequently changed columns and can cause rows moved across partitions, which is supported but not recommendeded.
 CREATE TABLE IF NOT EXISTS transactions_original (
     txn_id BIGSERIAL,
     amount DECIMAL(15, 2) NOT NULL,
