@@ -1,0 +1,36 @@
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# Java
+*.class
+target/
+*.jar
+
+# Logs & temp
+*.log
+*.tmp
+*.bak
+
+# PostgreSQL / credentials (do not commit secrets)
+*.pgpass
+.pgpass
+*.env
+.env
