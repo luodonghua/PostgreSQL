@@ -18,6 +18,7 @@ from m10;
 
 select timestamp 'epoch'+col_int*interval '1 second' from t;
 
+/* Output:
 mytest=> \dt+ t
                            List of relations
  Schema | Name | Type  |  Owner   | Persistence |  Size  | Description 
@@ -34,6 +35,7 @@ mytest=> \diS+ idx*
  public | idx_int       | index | postgres | t     | permanent   | 214 MB | 
  public | idx_timestamp | index | postgres | t     | permanent   | 214 MB | 
 (4 rows)
+*/
 
 
 
@@ -53,6 +55,7 @@ create index idx_timestamp on t_timestamp(col1);
 
 
 
+/* Output:
 mytest=> \di+
                                         List of relations
  Schema |     Name      | Type  |  Owner   |    Table    | Persistence |    Size    | Description 
@@ -72,6 +75,7 @@ mytest=> \dt+
  public | t_int       | table | postgres | permanent   | 0 bytes | 
  public | t_timestamp | table | postgres | permanent   | 0 bytes | 
 (4 rows)
+*/
 
 
 insert into t_int
@@ -120,6 +124,7 @@ select i,i,i,i,i from m10;
 
 
 
+/* Output:
 mytest=> \dt+
                                List of relations
  Schema |    Name     | Type  |  Owner   | Persistence |  Size   | Description 
@@ -139,6 +144,7 @@ mytest=> \di+
  public | idx_int       | index | postgres | t_int       | permanent   | 214 MB | 
  public | idx_timestamp | index | postgres | t_timestamp | permanent   | 214 MB | 
 (4 rows)
+*/
 
 
 
@@ -147,10 +153,10 @@ explain analyze verbose
 select * from t_int
 where col1 between extract(epoch from to_timestamp('2010-10-30 23:59:59','YYYY-MM-DD HH24:MI:SS'))::int
 and extract(epoch from to_timestamp('2010-11-01 00:00:01','YYYY-MM-DD HH24:MI:SS'))::int;
-                                                                                                                                   
 
 
 
+/* Output:
 mytest=> select * from t_int
 mytest-> where col1 between extract(epoch from to_timestamp('2010-01-31 23:59:59','YYYY-MM-DD HH24:MI:SS'))::int
 mytest->                and extract(epoch from to_timestamp('2010-02-01 00:00:01','YYYY-MM-DD HH24:MI:SS'))::int
@@ -177,19 +183,21 @@ mytest->                and extract(epoch from to_timestamp('2010-02-01 00:00:01
 (5 rows)
 
 Time: 214.318 ms
+*/
 
 explain analyze verbose
 select * from t_int
 where col1 between extract(epoch from to_timestamp('2010-01-31 23:59:59','YYYY-MM-DD HH24:MI:SS'))::int
 and extract(epoch from to_timestamp('2010-02-01 00:00:01','YYYY-MM-DD HH24:MI:SS'))::int;
-                                                                                                                                   
+
 
 explain analyze verbose
 select * from t_bigint
 where col1 between  to_char(to_timestamp('2010-01-31 23:59:59','YYYY-MM-DD HH24:MI:SS'),'YYYYMMDDHH24MISS')::bigint
 and to_char(to_timestamp('2010-02-01 00:00:01','YYYY-MM-DD HH24:MI:SS'),'YYYYMMDDHH24MISS')::bigint;
-                                                                                                                                   
 
+
+/* Output:
 mytest=> select * from t_char
 mytest-> where col1 between  to_char(to_timestamp('2010-01-31 23:59:59','YYYY-MM-DD HH24:MI:SS'),'YYYYMMDDHH24MISS')
 mytest-> and to_char(to_timestamp('2010-02-01 00:00:01','YYYY-MM-DD HH24:MI:SS'),'YYYYMMDDHH24MISS');
@@ -201,6 +209,7 @@ mytest-> and to_char(to_timestamp('2010-02-01 00:00:01','YYYY-MM-DD HH24:MI:SS')
 (3 rows)
 
 Time: 24533.995 ms (00:24.534)
+*/
 
 
 explain analyze verbose
@@ -215,20 +224,18 @@ where col1 between  to_timestamp('2010-01-31 23:59:59','YYYY-MM-DD HH24:MI:SS')
 and to_timestamp('2010-02-01 00:00:01','YYYY-MM-DD HH24:MI:SS');
 
 
-                 
-
 
 
 explain analyze verbose
 select * from t_int
 where col1 between extract(epoch from to_timestamp('2010-10-31 23:59:59','YYYY-MM-DD HH24:MI:SS'))::int
 and extract(epoch from to_timestamp('2010-11-01 00:00:01','YYYY-MM-DD HH24:MI:SS'))::int;
-                                                                                                                                   
+
 explain analyze verbose
 select * from t_int
 where col1 between extract(epoch from to_timestamp('2010-01-31 23:59:59','YYYY-MM-DD HH24:MI:SS'))::int
 and extract(epoch from to_timestamp('2010-11-01 00:00:01','YYYY-MM-DD HH24:MI:SS'))::int;
-                                                                                                                                   
+
 
 explain analyze verbose
 select * from t_bigint
@@ -261,7 +268,6 @@ explain analyze verbose
 select * from t_bigint
 where col1 between  to_char(to_timestamp('2010-12-31 23:59:59','YYYY-MM-DD HH24:MI:SS'),'YYYYMMDDHH24MISS')::bigint
 and to_char(to_timestamp('2011-01-01 00:00:01','YYYY-MM-DD HH24:MI:SS'),'YYYYMMDDHH24MISS')::bigint;
-                                                                                              
 
 explain analyze verbose
 select * from t_char
@@ -290,6 +296,7 @@ where col1 between to_char(to_timestamp('2010-10-31 23:59:59','YYYY-MM-DD HH24:M
                and to_char(to_timestamp('2010-11-01 00:00:01','YYYY-MM-DD HH24:MI:SS'),'YYYYMMDDHH24MISS');
 
 
+/* Output (Oracle 19c):
 SQL> explain plan for
   2  select * from t_char
   3  where col1 between to_char(to_timestamp('2010-10-31 23:59:59','YYYY-MM-DD HH24:MI:SS'),'YYYYMMDDHH24MISS')
@@ -321,7 +328,7 @@ Query Block Name / Object Alias (identified by operation id):
 Outline Data                                                                                        
 -------------                                                                                       
                                                                                                     
-  /*+                                                                                               
+  /+                                                                                               
       BEGIN_OUTLINE_DATA                                                                            
       BATCH_TABLE_ACCESS_BY_ROWID(@"SEL$1" "T_CHAR"@"SEL$1")                                        
       INDEX_RS_ASC(@"SEL$1" "T_CHAR"@"SEL$1" ("T_CHAR"."COL1"))                                     
@@ -331,7 +338,7 @@ Outline Data
       OPTIMIZER_FEATURES_ENABLE('19.1.0')                                                           
       IGNORE_OPTIM_EMBEDDED_HINTS                                                                   
       END_OUTLINE_DATA                                                                              
-  */                                                                                                
+  (hint block end)                                                                                   
                                                                                                     
 Predicate Information (identified by operation id):                                                 
 ---------------------------------------------------                                                 
@@ -391,7 +398,7 @@ Query Block Name / Object Alias (identified by operation id):
 Outline Data                                                                                        
 -------------                                                                                       
                                                                                                     
-  /*+                                                                                               
+  /+                                                                                               
       BEGIN_OUTLINE_DATA                                                                            
       BATCH_TABLE_ACCESS_BY_ROWID(@"SEL$1" "T_CHAR"@"SEL$1")                                        
       INDEX_RS_ASC(@"SEL$1" "T_CHAR"@"SEL$1" ("T_CHAR"."COL1"))                                     
@@ -401,7 +408,7 @@ Outline Data
       OPTIMIZER_FEATURES_ENABLE('19.1.0')                                                           
       IGNORE_OPTIM_EMBEDDED_HINTS                                                                   
       END_OUTLINE_DATA                                                                              
-  */                                                                                                
+  (hint block end)                                                                                   
                                                                                                     
 Predicate Information (identified by operation id):                                                 
 ---------------------------------------------------                                                 
@@ -430,6 +437,7 @@ Query Block Registry:
 
 Elapsed: 00:00:00.470
 SQL> 
+*/
 
 
 
@@ -437,7 +445,8 @@ explain analyze verbose
 select * from t_char
 where col1 between  to_char(to_timestamp('2010-10-31 23:59:59','YYYY-MM-DD HH24:MI:SS'),'YYYYMMDDHH24MISS')::bpchar
 and to_char(to_timestamp('2010-11-01 00:00:01','YYYY-MM-DD HH24:MI:SS'),'YYYYMMDDHH24MISS')::bpchar;
-       
+
+/* Output:
 test=# explain 
 test-# select * from t_char
 test-# where col1 between  to_char(to_timestamp('2010-10-31 23:59:59','YYYY-MM-DD HH24:MI:SS'),'YYYYMMDDHH24MISS')::bpchar
@@ -447,13 +456,22 @@ test-# and to_char(to_timestamp('2010-11-01 00:00:01','YYYY-MM-DD HH24:MI:SS'),'
  Index Scan using idx_char on t_char  (cost=0.45..4881.44 rows=100000 width=75)
    Index Cond: ((col1 >= (to_char(to_timestamp('2010-10-31 23:59:59'::text, 'YYYY-MM-DD HH24:MI:SS'::text), 'YYYYMMDDHH24MISS'::text))::bpchar) AND (col1 <= (to_char(to_timestamp('2010-11-01 00:00:01'::text, 'YYYY-MM-DD HH24:MI:SS'::text), 'YYYYMMDDHH24MISS'::text))::bpchar))
 (2 rows)
+*/
 
 explain 
 select * from t_char
 where col2 between  to_char(to_timestamp('2010-10-31 23:59:59','YYYY-MM-DD HH24:MI:SS'),'YYYYMMDDHH24MISS')::char(14)
 and to_char(to_timestamp('2010-11-01 00:00:01','YYYY-MM-DD HH24:MI:SS'),'YYYYMMDDHH24MISS')::char(14);
 
-         
+
+alter table t_char alter column col1 type varchar(14);
+
+explain
+select * from t_char
+where col1 between  to_char(to_timestamp('2010-10-31 23:59:59','YYYY-MM-DD HH24:MI:SS'),'YYYYMMDDHH24MISS')
+and to_char(to_timestamp('2010-11-01 00:00:01','YYYY-MM-DD HH24:MI:SS'),'YYYYMMDDHH24MISS');
+
+/* Output:
 test=# alter table t_char alter column col1 type varchar(14);
 ALTER TABLE
 Time: 62798.041 ms (01:02.798)
@@ -469,5 +487,4 @@ test-# and to_char(to_timestamp('2010-11-01 00:00:01','YYYY-MM-DD HH24:MI:SS'),'
 (4 rows)
 
 Time: 3.101 ms
-
-
+*/
