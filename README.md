@@ -38,7 +38,7 @@ SQL and application-side examples for building on PostgreSQL.
 - [UUIDv7/](Development/UUIDv7/) — UUIDv7 generation and partition migration ([details](Development/UUIDv7/README.md))
 - [SampleSchema/](Development/SampleSchema/) — sports-ticketing sample database ([details](Development/SampleSchema/README.md))
 - [Python/](Development/Python/) — parallel load/copy and SQLAlchemy examples
-- [Java/](Development/Java/) — JDBC prepared-statement plan-cache demo ([details](Development/Java/README.md))
+- [Java/](Development/Java/) — JDBC examples ([index](Development/Java/README.md)); incl. [prepared-statement plan-cache demo](Development/Java/jdbc-prepared-statement-plan-cache.md)
 - [datasets/](Development/datasets/) — sample datasets used by the scripts above
 
 ### Security
