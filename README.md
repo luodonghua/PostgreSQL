@@ -9,18 +9,18 @@ Amazon RDS.
 ### Administration
 Day-to-day operation and maintenance of a PostgreSQL server.
 
-- [managing-postgresql.sql](Administration/managing-postgresql.sql) — common server management tasks
-- [postgresql-maintenance.sql](Administration/postgresql-maintenance.sql) — routine maintenance (vacuum, analyze, reindex)
-- [postgresql-monitoring.sql](Administration/postgresql-monitoring.sql) — monitoring queries
-- [monitor-autovacuum.sql](Administration/monitor-autovacuum.sql) — tracking autovacuum behavior
-- [system-catalog.sql](Administration/system-catalog.sql) — querying the system catalogs
-- [server-process-memory-with-pmap.txt](Administration/server-process-memory-with-pmap.txt) — inspecting backend memory with `pmap`
+- [managing-postgresql.md](Administration/managing-postgresql.md) — common server management tasks
+- [postgresql-maintenance.md](Administration/postgresql-maintenance.md) — routine maintenance (vacuum, analyze, reindex, bloat, pg_repack)
+- [postgresql-monitoring.md](Administration/postgresql-monitoring.md) — monitoring queries (activity, locks, pg_stat_statements)
+- [monitor-autovacuum.md](Administration/monitor-autovacuum.md) — tracking autovacuum behavior and XID wraparound
+- [system-catalog.md](Administration/system-catalog.md) — querying the system catalogs
+- [server-process-memory-with-pmap.md](Administration/server-process-memory-with-pmap.md) — inspecting backend memory with `pmap`
 
 ### Performance
 Query planning and data-type choices that affect performance.
 
 - [join-strategy-and-order.sql](Performance/join-strategy-and-order.sql) — how the planner chooses joins
-- [use-right-data-type.sql](Performance/use-right-data-type.sql) — impact of data-type selection
+- [use-right-data-type.md](Performance/use-right-data-type.md) — impact of data-type selection on storage and query performance
 
 ### Development
 SQL and application-side examples for building on PostgreSQL.
@@ -41,12 +41,17 @@ SQL and application-side examples for building on PostgreSQL.
 - [Java/](Development/Java/) — JDBC examples ([index](Development/Java/README.md)); incl. [prepared-statement plan-cache demo](Development/Java/jdbc-prepared-statement-plan-cache.md)
 - [datasets/](Development/datasets/) — sample datasets used by the scripts above
 
+### Extension
+PostgreSQL extensions and low-level inspection.
+
+- [pageinspect_heap_index.md](Extension/pageinspect_heap_index.md) — inspecting heap and B-tree index page internals with `pageinspect`
+
 ### Security
 Authentication, authorization, and access control.
 
 - [postgresql-security.sql](Security/postgresql-security.sql) — general security examples
-- [schema-usage-privilege.sql](Security/schema-usage-privilege.sql) — schema-level privileges
-- [connect-rds-postgresql-with-iam-authentication.sql](Security/connect-rds-postgresql-with-iam-authentication.sql) — IAM authentication to RDS
+- [schema-usage-privilege.md](Security/schema-usage-privilege.md) — schema-level `USAGE` vs object privileges, walked through two sessions
+- [connect-rds-postgresql-with-iam-authentication.md](Security/connect-rds-postgresql-with-iam-authentication.md) — IAM authentication to RDS, with SSL modes
 - [krb5_pac_info.md](Security/krb5_pac_info.md) / [krb5_pac_info.c](Security/krb5_pac_info.c) — Kerberos PAC info
 
 ### RDS-PostgreSQL
@@ -69,7 +74,7 @@ Connection pooling options for PostgreSQL and how to choose between them.
 Installing and upgrading PostgreSQL.
 
 - [install-postgresql-13-on-amazon-linux-2.sh](Installation-Upgrade/install-postgresql-13-on-amazon-linux-2.sh) — install on Amazon Linux 2
-- [major-upgrade.sql](Installation-Upgrade/major-upgrade.sql) — major version upgrade notes
+- [major-upgrade.md](Installation-Upgrade/major-upgrade.md) — major version upgrade pre-checks
 
 ## Conventions
 
