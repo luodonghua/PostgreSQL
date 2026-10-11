@@ -26,6 +26,7 @@ Query planning and data-type choices that affect performance.
 SQL and application-side examples for building on PostgreSQL.
 
 - [query-examples.sql](Development/query-examples.sql) — assorted query examples
+- [autonomous-transactions.md](Development/autonomous-transactions.md) — autonomous transactions (audit-survives-rollback): the `dblink` loopback pattern, why `pg_background` isn't portable, and RDS/Aurora guidance
 - [partition-example.sql](Development/partition-example.sql) — table partitioning
 - [create-1000-sub-partition.sql](Development/create-1000-sub-partition.sql) — large sub-partition setup
 - [timestamp-with-time-zone.sql](Development/timestamp-with-time-zone.sql) — `timestamptz` behavior
