@@ -54,6 +54,16 @@ Amazon RDS for PostgreSQL specifics.
 - [replication-lag-on-read-replica.sql](RDS-PostgreSQL/replication-lag-on-read-replica.sql) — measuring replica lag
 - [simulate-long-running-query.sql](RDS-PostgreSQL/simulate-long-running-query.sql) — reproducing long-running queries
 
+### Connection-Pooling
+Connection pooling options for PostgreSQL and how to choose between them.
+
+- [pgbouncer-vs-rds-proxy.md](Connection-Pooling/pgbouncer-vs-rds-proxy.md) — detailed PgBouncer vs Amazon RDS Proxy comparison with diagrams
+- [rds-proxy/](Connection-Pooling/rds-proxy/) — managed RDS Proxy setup, IAM auth, failover ([details](Connection-Pooling/rds-proxy/README.md))
+- [pgbouncer/](Connection-Pooling/pgbouncer/) — PgBouncer pooling modes and configuration ([details](Connection-Pooling/pgbouncer/README.md))
+- [application-framework/](Connection-Pooling/application-framework/) — application-side pools (HikariCP, SQLAlchemy, pgx, node-pg, Npgsql) ([details](Connection-Pooling/application-framework/README.md))
+- [lock-contention-pool-exhaustion.md](Connection-Pooling/lock-contention-pool-exhaustion.md) — playbook: batch row locks blocking OLTP and draining the app connection pool
+- Overview: [Connection-Pooling/README.md](Connection-Pooling/README.md)
+
 ### Installation-Upgrade
 Installing and upgrading PostgreSQL.
 
