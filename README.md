@@ -52,8 +52,8 @@ Authentication, authorization, and access control.
 ### RDS-PostgreSQL
 Amazon RDS for PostgreSQL specifics.
 
-- [replication-lag-on-read-replica.sql](RDS-PostgreSQL/replication-lag-on-read-replica.sql) — measuring replica lag
-- [simulate-long-running-query.sql](RDS-PostgreSQL/simulate-long-running-query.sql) — reproducing long-running queries
+- [replication-lag-on-read-replica.md](RDS-PostgreSQL/replication-lag-on-read-replica.md) — measuring replica lag and query-vs-replay conflicts (`hot_standby_feedback`, `max_standby_streaming_delay`)
+- [simulate-long-running-query.md](RDS-PostgreSQL/simulate-long-running-query.md) — reproducing long-running queries with `pg_sleep`
 
 ### Connection-Pooling
 Connection pooling options for PostgreSQL and how to choose between them.

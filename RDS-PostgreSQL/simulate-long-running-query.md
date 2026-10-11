@@ -1,20 +1,44 @@
-/*
-mytest=> create table t1 (id int);
-CREATE TABLE
-                                                              
+# Simulating a Long-Running Query
+
+A small recipe for generating a controllable long-running query on PostgreSQL —
+useful for testing statement timeouts, lock/replication conflicts, monitoring
+views (`pg_stat_activity`), and read-replica cancellation behavior.
+
+The trick is `pg_sleep()` inside a correlated subquery so that total query
+duration ≈ `sleep_time × row_count`.
+
+## Setup: a table with some rows
+
+```sql
+CREATE TABLE t1 (id int);
+```
+
+Load rows with a quick shell loop (any volume works; a few hundred is enough):
+
+```bash
 i=1
 while [ $i -le 100000 ]
 do
-psql -c "insert into t1 values ($i)" 
-i=$(( $i + 1 ))
-echo $i
+  psql -c "insert into t1 values ($i)"
+  i=$(( $i + 1 ))
+  echo $i
 done
-*/
+```
 
--- play with pg_sleep() function with different timing, query duration ~ sleep_time x row_count
+## Generate a long-running query
 
-mytest=> select t1.* from t1, (select *,pg_sleep(0.2) from t1 order by id desc limit 10) t where t1.id=t.id;
- id  
+`pg_sleep(0.2)` runs for each of the 10 rows produced by the subquery, so the
+statement takes ~2 seconds:
+
+```sql
+SELECT t1.*
+FROM t1,
+     (SELECT *, pg_sleep(0.2) FROM t1 ORDER BY id DESC LIMIT 10) t
+WHERE t1.id = t.id;
+```
+
+```text
+ id
 -----
  248
  249
@@ -29,12 +53,24 @@ mytest=> select t1.* from t1, (select *,pg_sleep(0.2) from t1 order by id desc l
 (10 rows)
 
 Time: 2256.299 ms (00:02.256)
+```
 
+Tune the duration by changing the sleep interval or the `LIMIT`
+(duration ≈ `sleep_time × row_count`).
 
+## Confirm where the time goes with EXPLAIN ANALYZE
 
-mytest=> explain analyze verbose select t1.* from t1, (select *,pg_sleep(0.2) from t1 order by id desc limit 10) t where t1.id=t.id;
-                                                                   QUERY PLAN                                                                   
-------------------------------------------------------------------------------------------------------------------------------------------------
+```sql
+EXPLAIN (ANALYZE, VERBOSE)
+SELECT t1.*
+FROM t1,
+     (SELECT *, pg_sleep(0.2) FROM t1 ORDER BY id DESC LIMIT 10) t
+WHERE t1.id = t.id;
+```
+
+```text
+                                                 QUERY PLAN
+------------------------------------------------------------------------------------------------------------
  Hash Join  (cost=14.77..22.26 rows=10 width=4) (actual time=2021.169..2021.174 rows=10 loops=1)
    Output: t1.id
    Hash Cond: (t1.id = t.id)
@@ -60,3 +96,8 @@ mytest=> explain analyze verbose select t1.* from t1, (select *,pg_sleep(0.2) fr
 (22 rows)
 
 Time: 2255.492 ms (00:02.255)
+```
+
+The ~2 s is spent in the `Result` node evaluating `pg_sleep` for the 10 limited
+rows (`actual time=202.169..2020.966`), confirming the duration is driven by the
+sleep calls rather than data volume.
