@@ -25,14 +25,14 @@ Query planning and data-type choices that affect performance.
 ### Development
 SQL and application-side examples for building on PostgreSQL.
 
-- [query-examples.sql](Development/query-examples.sql) — assorted query examples
+- [query-examples.md](Development/query-examples.md) — assorted query idioms with output (`format`, date parts, `NOT IN (NULL)`, three-valued logic, window functions)
 - [autonomous-transactions.md](Development/autonomous-transactions.md) — autonomous transactions (audit-survives-rollback): the `dblink` loopback pattern, why `pg_background` isn't portable, and RDS/Aurora guidance
-- [partition-example.sql](Development/partition-example.sql) — table partitioning
-- [create-1000-sub-partition.sql](Development/create-1000-sub-partition.sql) — large sub-partition setup
-- [timestamp-with-time-zone.sql](Development/timestamp-with-time-zone.sql) — `timestamptz` behavior
-- [char-varchar-and-text-effects-on-trailing-space.sql](Development/char-varchar-and-text-effects-on-trailing-space.sql) — `char`/`varchar`/`text` trailing-space differences
-- [create-table-with-oids.sql](Development/create-table-with-oids.sql) — legacy `WITH OIDS` tables
-- [table-size-estimation.sql](Development/table-size-estimation.sql) — estimating table sizes
+- [partition-example.md](Development/partition-example.md) — table partitioning, sub-partitioning, attach/detach, and the cost of deep nesting
+- [create-1000-sub-partition.sql](Development/create-1000-sub-partition.sql) — generated DDL for a 1000-partition / 1000-level setup (runnable script)
+- [timestamp-with-time-zone.md](Development/timestamp-with-time-zone.md) — `timestamp` vs `timestamptz` behavior
+- [char-varchar-and-text-effects-on-trailing-space.md](Development/char-varchar-and-text-effects-on-trailing-space.md) — `char`/`varchar`/`text` trailing-space differences
+- [create-table-with-oids.md](Development/create-table-with-oids.md) — legacy `WITH OIDS` tables
+- [table-size-estimation.md](Development/table-size-estimation.md) — estimating table size from page layout
 - [load-data-daily-equity-volumes.sql](Development/load-data-daily-equity-volumes.sql) / [query-daily-equity-volumes.sql](Development/query-daily-equity-volumes.sql) — US equity volumes dataset
 - [load-data-t-oil.sql](Development/load-data-t-oil.sql) — oil dataset load
 - [UUIDv7/](Development/UUIDv7/) — UUIDv7 generation and partition migration ([details](Development/UUIDv7/README.md))
