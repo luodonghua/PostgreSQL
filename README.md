@@ -26,6 +26,7 @@ Query planning and data-type choices that affect performance.
 SQL and application-side examples for building on PostgreSQL.
 
 - [query-examples.md](Development/query-examples.md) — assorted query idioms with output (`format`, date parts, `NOT IN (NULL)`, three-valued logic, window functions)
+- [keyset-pagination.md](Development/keyset-pagination.md) — keyset/seek pagination with row-value comparison `(last_modified_ts, id) < (?, ?)`: why it beats `OFFSET`, tie-safety, and measured `EXPLAIN` plans
 - [autonomous-transactions.md](Development/autonomous-transactions.md) — autonomous transactions (audit-survives-rollback): the `dblink` loopback pattern, why `pg_background` isn't portable, and RDS/Aurora guidance
 - [partition-example.md](Development/partition-example.md) — table partitioning, sub-partitioning, attach/detach, and the cost of deep nesting
 - [create-1000-sub-partition.sql](Development/create-1000-sub-partition.sql) — generated DDL for a 1000-partition / 1000-level setup (runnable script)
