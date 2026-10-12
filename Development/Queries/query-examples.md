@@ -1,7 +1,7 @@
 # Assorted Query Examples
 
 A grab-bag of PostgreSQL query idioms and their output, using the `t_oil`
-dataset (see [`load-data-t-oil.sql`](load-data-t-oil.sql)) plus
+dataset (see [`load-data-t-oil.sql`](../datasets/load-data-t-oil.sql)) plus
 `generate_series`.
 
 ## `LIMIT`, `FETCH FIRST`, and `TABLE`

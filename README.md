@@ -25,17 +25,26 @@ Query planning and data-type choices that affect performance.
 ### Development
 SQL and application-side examples for building on PostgreSQL.
 
-- [query-examples.md](Development/query-examples.md) — assorted query idioms with output (`format`, date parts, `NOT IN (NULL)`, three-valued logic, window functions)
-- [keyset-pagination.md](Development/keyset-pagination.md) — keyset/seek pagination with row-value comparison `(last_modified_ts, id) < (?, ?)`: why it beats `OFFSET`, tie-safety, and measured `EXPLAIN` plans
-- [autonomous-transactions.md](Development/autonomous-transactions.md) — autonomous transactions (audit-survives-rollback): the `dblink` loopback pattern, why `pg_background` isn't portable, and RDS/Aurora guidance
-- [partition-example.md](Development/partition-example.md) — table partitioning, sub-partitioning, attach/detach, and the cost of deep nesting
-- [create-1000-sub-partition.sql](Development/create-1000-sub-partition.sql) — generated DDL for a 1000-partition / 1000-level setup (runnable script)
-- [timestamp-with-time-zone.md](Development/timestamp-with-time-zone.md) — `timestamp` vs `timestamptz` behavior
-- [char-varchar-and-text-effects-on-trailing-space.md](Development/char-varchar-and-text-effects-on-trailing-space.md) — `char`/`varchar`/`text` trailing-space differences
-- [create-table-with-oids.md](Development/create-table-with-oids.md) — legacy `WITH OIDS` tables
-- [table-size-estimation.md](Development/table-size-estimation.md) — estimating table size from page layout
-- [hybrid-jsonb-banking.md](Development/hybrid-jsonb-banking.md) / [hybrid-jsonb-banking.sql](Development/hybrid-jsonb-banking.sql) — hybrid JSONB + relational design (banking): keep hot fields (balance) relational, reserve JSONB for stable data; measured ~6× WAL reduction
-- [jsonb-wal-internals.md](Development/jsonb-wal-internals.md) — what PostgreSQL writes to the WAL on `UPDATE`, with real `pg_walinspect`-decoded records for inline JSONB, TOAST pointer reuse, and TOAST rewrite cascades
+**Queries** ([Queries/](Development/Queries/))
+- [query-examples.md](Development/Queries/query-examples.md) — assorted query idioms with output (`format`, date parts, `NOT IN (NULL)`, three-valued logic, window functions)
+- [keyset-pagination.md](Development/Queries/keyset-pagination.md) — keyset/seek pagination with row-value comparison `(last_modified_ts, id) < (?, ?)`: why it beats `OFFSET`, tie-safety, and measured `EXPLAIN` plans
+- [autonomous-transactions.md](Development/Queries/autonomous-transactions.md) — autonomous transactions (audit-survives-rollback): the `dblink` loopback pattern, why `pg_background` isn't portable, and RDS/Aurora guidance
+
+**Data types** ([DataTypes/](Development/DataTypes/))
+- [timestamp-with-time-zone.md](Development/DataTypes/timestamp-with-time-zone.md) — `timestamp` vs `timestamptz` behavior
+- [char-varchar-and-text-effects-on-trailing-space.md](Development/DataTypes/char-varchar-and-text-effects-on-trailing-space.md) — `char`/`varchar`/`text` trailing-space differences
+- [create-table-with-oids.md](Development/DataTypes/create-table-with-oids.md) — legacy `WITH OIDS` tables
+- [table-size-estimation.md](Development/DataTypes/table-size-estimation.md) — estimating table size from page layout
+
+**JSONB** ([JSONB/](Development/JSONB/))
+- [hybrid-jsonb-banking.md](Development/JSONB/hybrid-jsonb-banking.md) / [hybrid-jsonb-banking.sql](Development/JSONB/hybrid-jsonb-banking.sql) — hybrid JSONB + relational design (banking): keep hot fields (balance) relational, reserve JSONB for stable data; measured ~6× WAL reduction
+- [jsonb-wal-internals.md](Development/JSONB/jsonb-wal-internals.md) — what PostgreSQL writes to the WAL on `UPDATE`, with real `pg_walinspect`-decoded records for inline JSONB, TOAST pointer reuse, and TOAST rewrite cascades
+
+**Partitioning** ([Partitioning/](Development/Partitioning/))
+- [partition-example.md](Development/Partitioning/partition-example.md) — table partitioning, sub-partitioning, attach/detach, and the cost of deep nesting
+- [create-1000-sub-partition.sql](Development/Partitioning/create-1000-sub-partition.sql) — generated DDL for a 1000-partition / 1000-level setup (runnable script)
+
+**Indexes** ([Indexes/](Development/Indexes/))
 - [btree.md](Development/Indexes/btree.md) — B-tree (default): balanced ordered tree, high-key/right-link concurrency, splits, dedup, ordered scans
 - [hash.md](Development/Indexes/hash.md) — Hash (equality-only): value→bucket, overflow pages, bucket splits, stores only the hash code
 - [brin.md](Development/Indexes/brin.md) — BRIN (Block Range Index): per-range min/max summaries, revmap, lossy bitmap scan, correlation dependence
@@ -43,13 +52,13 @@ SQL and application-side examples for building on PostgreSQL.
 - [gist.md](Development/Indexes/gist.md) — GiST (Generalized Search Tree): bounding-predicate tree, opclass support functions, KNN, NSN/right-link concurrency, buffering build
 - [spgist.md](Development/Indexes/spgist.md) — SP-GiST (Space-Partitioned GiST): quadtree/k-d/radix tries, inner/leaf tuples, redirect tuples, triple-parity concurrency
 - [index-comparison.md](Development/Indexes/index-comparison.md) — B-tree vs Hash vs BRIN vs GIN vs GiST vs SP-GiST comparison and decision guide (with animations)
-- [load-data-daily-equity-volumes.sql](Development/load-data-daily-equity-volumes.sql) / [query-daily-equity-volumes.sql](Development/query-daily-equity-volumes.sql) — US equity volumes dataset
-- [load-data-t-oil.sql](Development/load-data-t-oil.sql) — oil dataset load
+
+**Other**
 - [UUIDv7/](Development/UUIDv7/) — UUIDv7 generation and partition migration ([details](Development/UUIDv7/README.md))
 - [SampleSchema/](Development/SampleSchema/) — sports-ticketing sample database ([details](Development/SampleSchema/README.md))
 - [Python/](Development/Python/) — parallel load/copy and SQLAlchemy examples
 - [Java/](Development/Java/) — JDBC examples ([index](Development/Java/README.md)); incl. [prepared-statement plan-cache demo](Development/Java/jdbc-prepared-statement-plan-cache.md)
-- [datasets/](Development/datasets/) — sample datasets used by the scripts above
+- [datasets/](Development/datasets/) — sample datasets and their loader scripts ([load-data-t-oil.sql](Development/datasets/load-data-t-oil.sql), [load-data-daily-equity-volumes.sql](Development/datasets/load-data-daily-equity-volumes.sql), [query-daily-equity-volumes.sql](Development/datasets/query-daily-equity-volumes.sql))
 
 ### Extension
 PostgreSQL extensions and low-level inspection.

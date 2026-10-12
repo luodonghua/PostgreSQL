@@ -229,5 +229,5 @@ while True:
 Expose the cursor to clients as an opaque token (e.g. base64 of `ts,id`) so the
 next request just echoes it back.
 
-See also: [btree.md](Indexes/btree.md) (why the composite B-tree seek is cheap),
-[index-comparison.md](Indexes/index-comparison.md).
+See also: [btree.md](../Indexes/btree.md) (why the composite B-tree seek is cheap),
+[index-comparison.md](../Indexes/index-comparison.md).
