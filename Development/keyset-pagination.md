@@ -37,6 +37,10 @@ exactly "order by `a`, then `b`", i.e.:
       OR (last_modified_ts = :last_ts AND id < :last_id)
 ```
 
+This `≡` is a **logical / correctness** equivalence — both return the same rows.
+It is **not** a performance equivalence: on PostgreSQL only the row-value form
+reliably becomes an index *seek*. Use the row-value form.
+
 The row-value form is preferred because:
 
 1. **It is correct across ties.** The second line is what continues *within* a
@@ -44,8 +48,34 @@ The row-value form is preferred because:
 2. **The planner turns it into a single index range scan.** PostgreSQL
    understands `ROW(...) < ROW(...)` against a matching multicolumn B-tree and
    emits one `Index Cond`, seeking straight to the start position — see the plan
-   below. The hand-written `OR` form often can't be collapsed into one clean
-   index range and may need a bitmap OR or a filter.
+   below. The expanded `OR` form, although logically identical, is **not**
+   recognized as one contiguous index range: the planner applies it as a
+   post-scan `Filter`, so it reads from the top of the index and discards the
+   leading rows (see the measured comparison below).
+
+### Measured: row-value seek vs. the expanded `OR` filter
+
+Same cursor, same table, same `LIMIT 10` — only the predicate shape differs:
+
+```
+(A) WHERE (last_modified_ts, id) < (:ts, :id)
+    ->  Index Cond: (ROW(last_modified_ts, id) < ROW(:ts, :id))
+        actual rows=10        Buffers: 4           ← true seek
+
+(B) WHERE last_modified_ts < :ts
+       OR (last_modified_ts = :ts AND id < :id)
+    ->  Filter: ((last_modified_ts < :ts) OR (last_modified_ts = :ts AND id < :id))
+        Rows Removed by Filter: 50001
+        actual rows=10        Buffers: 562         ← scans + filters, not a seek
+```
+
+The `OR` form touched ~140× more buffers here and gets worse the deeper you page
+(like `OFFSET`). Reordering the `OR` clauses does not help — it stays a `Filter`.
+
+**When you must use the `OR` form:** mixed sort directions, e.g.
+`ORDER BY last_modified_ts DESC, id ASC`. A single `(a, b) < (x, y)` can't
+express "a descending, b ascending", so you fall back to
+`a < ? OR (a = ? AND b > ?)` and accept the filter cost (or redesign the key).
 
 ### `id` is the tiebreaker — without it you lose or repeat rows
 
