@@ -33,6 +33,15 @@ SQL and application-side examples for building on PostgreSQL.
 - [char-varchar-and-text-effects-on-trailing-space.md](Development/char-varchar-and-text-effects-on-trailing-space.md) — `char`/`varchar`/`text` trailing-space differences
 - [create-table-with-oids.md](Development/create-table-with-oids.md) — legacy `WITH OIDS` tables
 - [table-size-estimation.md](Development/table-size-estimation.md) — estimating table size from page layout
+- [hybrid-jsonb-banking.md](Development/hybrid-jsonb-banking.md) / [hybrid-jsonb-banking.sql](Development/hybrid-jsonb-banking.sql) — hybrid JSONB + relational design (banking): keep hot fields (balance) relational, reserve JSONB for stable data; measured ~6× WAL reduction
+- [jsonb-wal-internals.md](Development/jsonb-wal-internals.md) — what PostgreSQL writes to the WAL on `UPDATE`, with real `pg_walinspect`-decoded records for inline JSONB, TOAST pointer reuse, and TOAST rewrite cascades
+- [btree.md](Development/Indexes/btree.md) — B-tree (default): balanced ordered tree, high-key/right-link concurrency, splits, dedup, ordered scans
+- [hash.md](Development/Indexes/hash.md) — Hash (equality-only): value→bucket, overflow pages, bucket splits, stores only the hash code
+- [brin.md](Development/Indexes/brin.md) — BRIN (Block Range Index): per-range min/max summaries, revmap, lossy bitmap scan, correlation dependence
+- [gin.md](Development/Indexes/gin.md) — GIN (Generalized Inverted Index): inverted structure, posting lists/trees, varbyte compression, `fastupdate` pending list
+- [gist.md](Development/Indexes/gist.md) — GiST (Generalized Search Tree): bounding-predicate tree, opclass support functions, KNN, NSN/right-link concurrency, buffering build
+- [spgist.md](Development/Indexes/spgist.md) — SP-GiST (Space-Partitioned GiST): quadtree/k-d/radix tries, inner/leaf tuples, redirect tuples, triple-parity concurrency
+- [index-comparison.md](Development/Indexes/index-comparison.md) — B-tree vs Hash vs BRIN vs GIN vs GiST vs SP-GiST comparison and decision guide (with animations)
 - [load-data-daily-equity-volumes.sql](Development/load-data-daily-equity-volumes.sql) / [query-daily-equity-volumes.sql](Development/query-daily-equity-volumes.sql) — US equity volumes dataset
 - [load-data-t-oil.sql](Development/load-data-t-oil.sql) — oil dataset load
 - [UUIDv7/](Development/UUIDv7/) — UUIDv7 generation and partition migration ([details](Development/UUIDv7/README.md))
