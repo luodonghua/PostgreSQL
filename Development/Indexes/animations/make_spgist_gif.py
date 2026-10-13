@@ -24,10 +24,14 @@ CAPACITY = 1              # a quadrant splits when it would hold > 1 point
 DURATION_MS = 3000
 
 # ---- deterministic sample points (x,y in 0..100) ----
-POINTS = [(20, 25), (75, 80), (40, 60), (85, 30),
-          (55, 15), (10, 85), (65, 55), (30, 40)]
+# Chosen so no point lands on (or visually touches) a quadrant boundary. The
+# recursive centroid splits of [0,100] fall on 50, then 25/75, then 12.5-steps;
+# these points keep a wide margin from all of them, so every point sits clearly
+# inside exactly one leaf cell.
+POINTS = [(13, 18), (83, 88), (42, 63), (88, 38),
+          (58, 13), (13, 83), (63, 42), (33, 33)]
 
-QUERY = (35, 20, 70, 65)  # query rectangle in data coords (x0,y0,x1,y1)
+QUERY = (30, 20, 68, 68)  # query rectangle in data coords (x0,y0,x1,y1)
 
 try:
     FONT = ImageFont.truetype("DejaVuSans.ttf", 13)
@@ -53,7 +57,12 @@ class Quad:
         self.children = None     # [NW, NE, SW, SE] once split
 
     def contains(self, p):
-        return self.x0 <= p[0] <= self.x1 and self.y0 <= p[1] <= self.y1
+        # Half-open on the upper/right edges so a point on a shared split line
+        # (x == cx or y == cy) belongs to exactly ONE child, never two. The
+        # outer edge at 100 stays inclusive so the top/right border is covered.
+        x_ok = self.x0 <= p[0] < self.x1 or (p[0] == self.x1 == 100)
+        y_ok = self.y0 <= p[1] < self.y1 or (p[1] == self.y1 == 100)
+        return x_ok and y_ok
 
     def split(self):
         cx = (self.x0 + self.x1) / 2.0

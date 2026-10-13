@@ -138,6 +138,17 @@ The code decides between the two cases with `GinIsPostingTree(itup)`; the leaf
 tuple header is overloaded to store either the inline posting offset/count or the
 posting-tree root block number (`GinGetPostingTree` / `GinSetPostingTree`).
 
+### Animation: build the inverted index and query
+
+![GIN inverted index build and query](animations/gin.gif)
+
+Each row's array is decomposed by the opclass into keys, and every key is mapped
+to a **posting list** of the row TIDs that contain it — a key is stored **once**
+and later rows just append their TID. A containment query `tags @> {green, red}`
+extracts its own query keys, looks each up, and the `consistent(AND)` function
+**intersects** the posting lists to get the candidates (`{r1, r3}`). (Generated
+by [`animations/make_gin_gif.py`](animations/make_gin_gif.py).)
+
 > Note from the source README: **there is no delete operation in the entry
 > tree.** The set of distinct keys in a large corpus changes very slowly, so GIN
 > never removes key entries — this simplifies the concurrency and recovery code.
