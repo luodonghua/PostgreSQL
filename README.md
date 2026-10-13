@@ -10,9 +10,7 @@ Amazon RDS.
 Day-to-day operation and maintenance of a PostgreSQL server.
 
 - [managing-postgresql.md](Administration/managing-postgresql.md) — common server management tasks
-- [postgresql-maintenance.md](Administration/postgresql-maintenance.md) — routine maintenance (vacuum, analyze, reindex, bloat, pg_repack)
 - [postgresql-monitoring.md](Administration/postgresql-monitoring.md) — monitoring queries (activity, locks, pg_stat_statements)
-- [monitor-autovacuum.md](Administration/monitor-autovacuum.md) — tracking autovacuum behavior and XID wraparound
 - [system-catalog.md](Administration/system-catalog.md) — querying the system catalogs
 - [server-process-memory-with-pmap.md](Administration/server-process-memory-with-pmap.md) — inspecting backend memory with `pmap`
 
@@ -21,6 +19,17 @@ Query planning and data-type choices that affect performance.
 
 - [join-strategy-and-order.sql](Performance/join-strategy-and-order.sql) — how the planner chooses joins
 - [use-right-data-type.md](Performance/use-right-data-type.md) — impact of data-type selection on storage and query performance
+
+### Maintenance
+How PostgreSQL keeps tables healthy, explained from the source with animations.
+
+- [vacuum.md](Maintenance/vacuum.md) — VACUUM: MVCC dead tuples, HOT pruning, the visibility map, the three phases (heap scan → index vacuum → heap reap), truncation; includes freezing and XID wraparound (`relfrozenxid`, anti-wraparound vacuum, failsafe)
+- [analyze.md](Maintenance/analyze.md) — ANALYZE: fixed-size sampling (`300 × statistics_target`), two-stage block + Vitter reservoir sampling, and the `pg_statistic` it produces (MCV, histogram, `n_distinct`, correlation)
+- [autovacuum.md](Maintenance/autovacuum.md) — autovacuum: launcher/worker model, how a database and then tables are chosen across the cluster (`threshold + scale_factor × reltuples`), score-based prioritization, and monitoring
+- [parameters.md](Maintenance/parameters.md) — every vacuum/analyze/autovacuum setting grouped by role and how they interrelate, with tuning recipes
+- [postgresql-maintenance.md](Maintenance/postgresql-maintenance.md) — routine maintenance commands (vacuum, analyze, reindex, bloat, pg_repack)
+- [monitor-autovacuum.md](Maintenance/monitor-autovacuum.md) — tracking autovacuum behavior and XID wraparound in production
+- Overview with animations: [Maintenance/README.md](Maintenance/README.md)
 
 ### Development
 SQL and application-side examples for building on PostgreSQL.
