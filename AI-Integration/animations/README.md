@@ -1,13 +1,15 @@
-# pgvector index animations
+# pgvector index animations & diagrams
 
-Animated GIFs that visualize how pgvector's two approximate-nearest-neighbor
-(ANN) index types — **IVFFlat** and **HNSW** — build and query, plus the
-pure-Python (Pillow only) scripts that generate them.
+Animated GIFs **and** static labeled diagrams that visualize how pgvector's two
+approximate-nearest-neighbor (ANN) index types — **IVFFlat** and **HNSW** — build
+and query, plus the pure-Python (Pillow only) scripts that generate them.
 
-| Animation | What it shows |
+| Visual | What it shows |
 |-----------|---------------|
 | ![IVFFlat](ivfflat.gif) | IVFFlat: k-means clusters the vectors into `lists` cells, each with a center; a query compares only to the centers and scans the `probes` nearest list(s), **skipping** the rest. Approximate — the true neighbor may sit in a skipped list. |
 | ![HNSW](hnsw.gif) | HNSW: a multilayer proximity graph (sparse top layer → all-nodes bottom layer); a query does a **greedy descent** from the top entry point, hopping to the closest neighbor layer by layer until the bottom layer yields the top-k. No training step. |
+| ![IVFFlat structure](ivfflat-structure.png) | Static single-frame view of IVFFlat: query → compare to centroids → probe the nearest list → scan only those vectors → nearest neighbours (skipped lists greyed). |
+| ![HNSW structure](hnsw-structure.png) | Static single-frame view of HNSW: the three labeled layers (sparse entry → dense bottom) with the greedy search path descending to the nearest neighbour. |
 
 The two side by side capture the core difference:
 
@@ -16,15 +18,19 @@ The two side by side capture the core difference:
 - **HNSW** — *navigate a graph*: follow near-neighbor links down the hierarchy.
   Better speed/recall, slower/heavier to build, recall tuned by `ef_search`.
 
-See the detailed doc: [../pgvector-indexes.md](../pgvector-indexes.md).
+See the detailed docs: [../pgvector-hnsw.md](../pgvector-hnsw.md) ·
+[../pgvector-ivfflat.md](../pgvector-ivfflat.md) ·
+[../pgvector-indexes.md](../pgvector-indexes.md) (comparison & data modeling).
 
 ## Regenerating
 
 Requires only Python 3 with Pillow (no matplotlib / ffmpeg):
 
 ```sh
-python3 make_ivfflat_gif.py    # writes ivfflat.gif
-python3 make_hnsw_gif.py       # writes hnsw.gif
+python3 make_ivfflat_gif.py          # writes ivfflat.gif
+python3 make_hnsw_gif.py             # writes hnsw.gif
+python3 make_ivfflat_structure.py    # writes ivfflat-structure.png
+python3 make_hnsw_structure.py       # writes hnsw-structure.png
 ```
 
 Each script contains a small, real implementation of the structure — an actual

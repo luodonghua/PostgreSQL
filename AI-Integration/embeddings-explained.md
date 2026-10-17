@@ -225,24 +225,60 @@ every row (exact); with an HNSW/IVFFlat index it is approximate but fast (see
 
 ## 3. The distance operators
 
-pgvector exposes three distance operators. Each has a matching index operator
-class (used in the next doc):
+Before the table, the intuition: to find the "closest" vectors the database needs
+a **distance metric** — and you can think of each metric as a different kind of
+**ruler** for measuring how far apart two vectors are:
 
-| Operator | Meaning | Returns | Index opclass |
-|----------|---------|---------|---------------|
-| `<->` | **L2** (Euclidean) distance | `0` = identical, grows with distance | `vector_l2_ops` |
-| `<=>` | **cosine** distance | `1 − cosine_similarity` (0…2) | `vector_cosine_ops` |
-| `<#>` | **negative inner product** | `−(a·b)` | `vector_ip_ops` |
+- **L2 / Euclidean (`<->`)** — the "as the crow flies" straight-line distance
+  between two points, the familiar Pythagorean ruler. Cares about where the points
+  actually sit, including how long the vectors are.
+- **Cosine (`<=>`)** — ignores length entirely and measures only the **angle**
+  between the two vectors. Two vectors pointing the same way are "identical" no
+  matter their magnitude. This is the most popular ruler for **text/topic**
+  similarity, because meaning lives in direction, not length.
+- **Inner product (`<#>`)** — blends both the angle *and* the magnitude into one
+  number. (In pgvector it returns the **negative** inner product so that, like the
+  others, ascending sort still puts the most similar first.)
+
+The other three are specialized and rarely used for text embeddings:
+
+- **L1 / Manhattan (`<+>`)** — adds up the distance along each dimension
+  separately (city-block distance), instead of the straight line.
+- **Hamming (`<~>`)** — for **binary** vectors: how many bit positions differ.
+- **Jaccard (`<%>`)** — for **binary** vectors: dissimilarity of the two bit sets.
+
+Each operator has a matching index operator class (used in the next doc):
+
+| Operator | Meaning | Applies to | Returns | Index opclass |
+|----------|---------|-----------|---------|---------------|
+| `<->` | **L2** (Euclidean) distance | float vectors | `0` = identical, grows with distance | `vector_l2_ops` |
+| `<=>` | **cosine** distance | float vectors | `1 − cosine_similarity` (0…2) | `vector_cosine_ops` |
+| `<#>` | **negative inner product** | float vectors | `−(a·b)` | `vector_ip_ops` |
+| `<+>` | **L1** (Manhattan/taxicab) distance | float vectors | `Σ |aᵢ − bᵢ|` | `vector_l1_ops` |
+| `<~>` | **Hamming** distance | `bit` vectors | number of differing bits | `bit_hamming_ops` |
+| `<%>` | **Jaccard** distance | `bit` vectors | `1 − |a∩b| / |a∪b|` | `bit_jaccard_ops` |
+
+The first four (`<->`, `<=>`, `<#>`, `<+>`) work on float vectors (`vector`,
+`halfvec`, `sparsevec`); the last two (`<~>`, `<%>`) are for **binary** vectors of
+type `bit(n)`. For text embeddings you almost always use `<=>` (cosine) or, on
+normalized data, `<#>`; `<->`/`<+>` suit data where absolute magnitude matters,
+and the `bit` operators are for binary fingerprints (e.g. hashed features,
+image hashes).
 
 They are *distances*: **smaller = more similar**, so you always `ORDER BY` them
-ascending. Verified behavior on real vectors:
+ascending. Verified behavior (float operators on real vectors; binary operators
+on `bit` values):
 
 ```sql
 SELECT '[1,2,3]'::vector <-> '[1,2,3]' AS l2_same,       -- 0        (identical)
        '[1,2,3]'::vector <-> '[4,5,6]' AS l2_diff,       -- 5.196    (far)
        '[1,0]'::vector   <=> '[1,0]'   AS cos_identical, -- 0        (same direction)
        '[1,0]'::vector   <=> '[0,1]'   AS cos_orthogonal,-- 1        (unrelated)
-       '[1,0]'::vector   <=> '[-1,0]'  AS cos_opposite;  -- 2        (opposite)
+       '[1,0]'::vector   <=> '[-1,0]'  AS cos_opposite,  -- 2        (opposite)
+       '[1,2,3]'::vector <+> '[1,5,7]' AS l1;            -- 7        (|0|+|3|+|4|)
+
+SELECT '1010'::bit(4) <~> '1001'::bit(4) AS hamming,     -- 2        (2 differing bits)
+       '1100'::bit(4) <%> '1010'::bit(4) AS jaccard;     -- 0.6667   (1 - 1/3)
 ```
 
 ### Cosine vs L2 — the key difference
@@ -292,7 +328,11 @@ exact same direction.
 2. **L2 and cosine rankings agree.** Once all vectors are unit-length, ordering by
    L2 distance and ordering by cosine distance produce the **same** nearest
    neighbors. So you can build an `vector_l2_ops` or `vector_cosine_ops` index and
-   get consistent results.
+   get consistent results. **Note: same *ranking*, not the same *value*.** The two
+   distances stay different numbers — related by `L2 = √(2 × cosine_distance)` —
+   but since `√(2x)` is strictly increasing it never reorders anything, so the
+   top-k is identical. (e.g. a pair at cosine distance `0.036` is at L2
+   `√(2·0.036) ≈ 0.269` — different scale, same "closest".)
 3. **Consistency / numerical stability.** Equal-length vectors remove magnitude as
    a confounding factor, so similarity reflects meaning only.
 

@@ -56,8 +56,44 @@ The same query filtered to `category = 'sports'` (the cluster the query is in)
 returns a full 5/5. So post-filtering works great **when the filter correlates
 with the query region** and fails badly when it doesn't.
 
-There are three strategies to handle this. The planner chooses among them by
-cost; you can also force the outcome.
+### Principle: filter early, rank later
+
+Vector similarity is **expensive** — it computes a distance across up to
+thousands of dimensions for every candidate row. A SQL filter (especially an
+indexed one) is **cheap** by comparison. So the goal is to shrink the candidate
+set with the cheap filter *before* doing the heavy distance math — "only compare
+against people in this neighborhood," not the whole city.
+
+The good news: **PostgreSQL's cost model already does this automatically when the
+filter is selective enough.** Verified on 50k rows — the plan flips based on
+selectivity:
+
+```sql
+-- SELECTIVE filter (~0.1%): planner filters EARLY via the scalar index,
+-- then ranks the few survivors by exact distance (100% recall)
+EXPLAIN SELECT id FROM items WHERE tenant < 50 ORDER BY embedding <=> :q LIMIT 5;
+--  Sort  (Sort Key: embedding <=> :q)
+--    ->  Index Scan using items_tenant_idx   (Index Cond: tenant < 50)   <- filter first
+
+-- NON-selective filter (~20%): planner uses the HNSW index first and applies
+-- the filter AFTER (filtering early wouldn't pay off on 10k rows)
+EXPLAIN SELECT id FROM items WHERE category = 'a' ORDER BY embedding <=> :q LIMIT 5;
+--  Index Scan using items_embedding_idx   (Order By: embedding <=> :q)
+--    Filter: (category = 'a')                                            <- rank first
+```
+
+So the actionable part is not to *force* a filter-first plan, but to **make
+filtering early possible and cheap**:
+
+- **Index the filter columns** (B-tree for scalars, GIN for `tsvector`) so the
+  planner has a cheap early-filter option.
+- **Keep filters selective** — the more a filter narrows the set, the more likely
+  (and more beneficial) the filter-early plan.
+- When the filter is selective, you also get **exact** results for free (the
+  survivors are distance-sorted directly, no ANN approximation).
+
+The three strategies below are the concrete forms this takes; the planner chooses
+among them by cost, and you can also force the outcome.
 
 ---
 
@@ -180,7 +216,194 @@ text matches. The strategies mirror Pattern 1:
 > **Weighted hybrid scoring.** Beyond filtering, you can *blend* lexical and
 > semantic relevance — e.g. `ORDER BY (0.5 * ts_rank(description_tsv, q_text)) +
 > (0.5 * (1 - (embedding <=> q_vec)))`. This computes on the candidate set (not
-> indexed), so pre-narrow with a filter or a two-stage query first.
+> indexed), so pre-narrow with a filter or a two-stage query first. **But adding
+> raw scores directly is usually wrong** — see *rank fusion* (RRF) below for
+> blending two *searches*, and *Scoring is a business decision* for blending
+> similarity with business signals.
+
+---
+
+## Pattern 3: true hybrid ranking with Reciprocal Rank Fusion (RRF)
+
+Patterns 1–2 use one method to **filter** and the other to **order**. True hybrid
+*ranking* instead runs **both** searches independently and **merges their ranked
+result lists** — getting semantic recall (vector) *and* exact-token precision
+(full-text / BM25) in one query, inside one database, with no external search
+engine to sync.
+
+### Why you can't just add the scores
+
+Vector distance (`<=>`, ~0–2) and full-text score (`ts_rank_cd`, an unbounded
+frequency-based number) live on **completely different scales**. Summing or
+averaging them lets whichever metric happens to have larger numbers dominate, and
+the weights are impossible to tune robustly.
+
+**Reciprocal Rank Fusion (RRF)** sidesteps this: it ignores the raw scores and
+fuses the **rank positions** instead. Each method contributes `1 / (k + rank)`
+for a document (rank 1, 2, 3, …), and the contributions are summed. Because it
+only uses ordinal rank, the scale mismatch disappears entirely. `k` is a damping
+constant; **`k = 60` is the common default**.
+
+```
+rrf_score(doc) = Σ over methods of   1 / (k + rank_in_that_method)
+```
+
+A document ranked highly by *both* methods accumulates the most; a document found
+by only one still scores (via `COALESCE(..., 0)` for the method that missed it).
+
+### The query (verified on pgvector 0.8.7)
+
+Setup — vector + a generated `tsvector`, each with its own index:
+
+```sql
+CREATE TABLE documents (
+    id          serial PRIMARY KEY,
+    title       text,
+    content     text,
+    embedding   vector(1536),                       -- e.g. text-embedding-3-small
+    tsv_content tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
+);
+CREATE INDEX ON documents USING hnsw (embedding vector_cosine_ops);  -- semantic
+CREATE INDEX ON documents USING gin  (tsv_content);                  -- lexical
+```
+
+Fuse the two ranked lists with a `FULL OUTER JOIN` + RRF:
+
+```sql
+WITH vector_search AS (
+    SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> :q_vec) AS rank
+    FROM documents
+    ORDER BY embedding <=> :q_vec
+    LIMIT 20
+),
+text_search AS (
+    SELECT id, ROW_NUMBER() OVER (
+             ORDER BY ts_rank_cd(tsv_content, to_tsquery('english', :q_text)) DESC) AS rank
+    FROM documents
+    WHERE tsv_content @@ to_tsquery('english', :q_text)
+    ORDER BY ts_rank_cd(tsv_content, to_tsquery('english', :q_text)) DESC
+    LIMIT 20
+)
+SELECT d.id, d.title,
+       COALESCE(1.0/(60.0 + v.rank), 0.0)         -- vector contribution (k=60)
+     + COALESCE(1.0/(60.0 + t.rank), 0.0) AS rrf_score   -- text contribution
+FROM vector_search v
+FULL OUTER JOIN text_search t ON v.id = t.id       -- keep docs found by either
+JOIN documents d ON d.id = COALESCE(v.id, t.id)
+ORDER BY rrf_score DESC
+LIMIT 10;
+```
+
+Verified behaviour (small demo set): documents matched by **both** searches rose
+to the top with the highest RRF scores, documents matched by only one ranked
+below, and one-sided matches were handled correctly by the `FULL OUTER JOIN` +
+`COALESCE` (a document the AND text query missed simply contributed 0 from the
+text side). The scale mismatch never appears because only ranks are combined.
+
+### Notes
+
+- Each subquery is independently indexable: the vector CTE uses the **HNSW**
+  index, the text CTE uses the **GIN** index. Keep each `LIMIT` (e.g. 20) small —
+  RRF only needs each method's top-N.
+- **Tune `k`:** larger `k` flattens the contribution of top ranks (more democratic
+  across methods); smaller `k` rewards being #1 more sharply. 60 is a fine start.
+- **Weight a method** by multiplying its term, e.g.
+  `1.5 * COALESCE(1.0/(60+v.rank),0)` to favor semantic hits.
+- This is the native, single-database alternative to running a separate lexical
+  engine (Elasticsearch/OpenSearch) beside your vector store — no cross-system
+  sync. For the full-text side details see
+  [../Development/FullTextSearch/full-text-search.md](../Development/FullTextSearch/full-text-search.md).
+
+### Does RRF use a `BitmapAnd` (like the §9 filter case)?
+
+**No — and it structurally can't.** Unlike the scalar-filter case in §9 (where the
+planner can `BitmapAnd` a GIN and a B-tree), the RRF query runs **two separate
+index scans that are joined**, not intersected. The verified plan:
+
+```
+Sort (by rrf_score)
+  Nested Loop                                    -- fetch titles by id
+    Hash Full Join   (Hash Cond: v.id = t.id)    -- FUSION happens here
+      ├─ vector CTE:  Index Scan using ..._embedding_idx   (HNSW, Order By <=>)
+      └─ text CTE:    Bitmap Heap Scan
+                        -> Bitmap Index Scan on ..._tsv_content_idx   (GIN @@)
+```
+
+Each branch uses its **own** index (HNSW for the vector CTE, GIN for the text CTE),
+and the results are combined by a **`Hash Full Join`** on `id`. Three reasons a
+`BitmapAnd` cannot apply:
+
+1. **The vector side has no predicate — it's `ORDER BY … LIMIT`.** `embedding <=> q`
+   *orders* rows and takes the top-N; it does not select a row set. HNSW yields a
+   ranked top-N, not a bitmap to intersect. (KNN is an **ordering** operation;
+   bitmaps are for **set membership** — the deep reason.)
+2. **It's a `FULL OUTER JOIN` (union-like), not an AND.** RRF deliberately keeps
+   documents found by *either* method (that's what `COALESCE(…,0)` is for).
+   `BitmapAnd` computes an intersection — the opposite of what RRF needs.
+3. **The scans carry *ranks*, not just row IDs.** Each branch computes
+   `ROW_NUMBER()` over its own ordering; a bitmap holds no position info, so fusion
+   must happen at the tuple level (the join), after each side has ranked.
+
+`BitmapAnd` only shows up when both conditions are **predicates over the same
+table scan** (§9: `@@ q AND price < 50`) — and even there the vector KNN part never
+participates, only scalar/text predicates do. The RRF plan is nonetheless
+efficient: each side is capped by a small `LIMIT` (e.g. 20), so the `Hash Full
+Join` works on tiny inputs (~20+20 rows) — measured ~7.5 ms on 20k rows.
+
+---
+
+## Scoring is a business decision, not just arithmetic
+
+"Most similar" is often **not** "best." Real applications blend vector similarity
+with **business signals** stored as ordinary SQL columns — margin, popularity,
+rating, freshness/recency, risk, compliance flags — into one ranking score:
+
+```sql
+SELECT name,
+       0.6 * (1 - (embedding <=> :q))   -- semantic similarity (0..1)
+     + 0.4 * margin_score               -- business signal (SQL column)
+       AS final_score
+FROM products
+WHERE category = 'Swimwear'
+ORDER BY final_score DESC
+LIMIT 10;
+```
+
+Verified behaviour: two items that were **equally similar** (similarity 1.000)
+ranked *differently* once margin was folded in (final 0.960 vs 0.720) — and an
+item with the best *rating* was buried because the weights didn't include rating.
+That is the whole point: **the weights `(0.6, 0.4)` and which signals you include
+encode a business policy, not a mathematical truth.**
+
+So treat the scoring model as a product/business decision, not a formula to copy:
+
+- **Which signals matter** differ by domain — retail may weight margin and stock;
+  support may weight recency; fraud/insurance may weight *risk first* ("similar
+  case **and** higher fraud risk"); maintenance may boost recent fixes
+  (`0.7*similarity + 0.3*freshness`).
+- **The weights are tunable knobs**, ideally driven by business goals and
+  A/B-tested — not guessed once and frozen. A 70/30 vs 50/50 split can change the
+  whole result order.
+- **Normalize before combining.** Similarity (`1 - (… <=> …)`) is 0..1, but a raw
+  `margin_score`, price, or rating may be on any scale — scale each signal to a
+  comparable range first, or the biggest-magnitude term silently dominates. (When
+  you only have *ranks* rather than scores, use RRF above instead.)
+- **Make it explainable.** Return the component scores (similarity, margin, …)
+  alongside `final_score` so the ranking can be justified, debugged, and tuned —
+  important in regulated domains.
+
+In short, PostgreSQL computes similarity, applies the SQL rules, blends the score,
+and returns ranked results in one query — but *what* to blend and *how much* is a
+business judgment the customer must own.
+
+> **These signals usually live in other tables.** The blended/filtered columns
+> (inventory, pricing, user profile, brand, compliance) don't have to sit in the
+> same row as the embedding — join to them. A vector query joins to any related
+> table just like normal SQL, e.g. gate by live stock
+> (`JOIN inventory i ON i.product_id = p.id WHERE i.stock > 0`), or even compare an
+> item embedding against a **different table's** vector — personalization ranks
+> `product.embedding <-> user.preference_vec` by joining `products` to a `users`
+> row's taste vector. One query, one plan, across all the tables.
 
 ---
 
@@ -221,6 +444,16 @@ At millions of rows the filter/scan interaction dominates performance:
 3. **Full-text + vector:** a `tsvector` GIN predicate with a vector `ORDER BY`;
    same strategies, with optional weighted lexical+semantic scoring on the
    candidate set.
-4. **At scale:** prefer partitioning by common filter columns, use iterative scans
+4. **Rank fusion (RRF):** to truly *blend* semantic + lexical relevance, run both
+   searches and merge their **ranks** with `1/(k+rank)` (k≈60) — never add the raw
+   scores (different scales). Native single-DB alternative to a separate lexical
+   engine.
+5. **Scoring is a business decision:** blend similarity with SQL business signals
+   (margin, rating, freshness, risk) via weighted `final_score` — but the signals
+   and weights encode business policy (normalize scales, make it explainable,
+   A/B-test), not fixed math. Signals can live in **other tables** — join to them
+   (inventory/users/pricing), including comparing an item vector to a user's
+   preference vector.
+6. **At scale:** prefer partitioning by common filter columns, use iterative scans
    with bounds, raise `ef_search`/`probes` under filtering, and keep indexes in
    memory. Always `EXPLAIN (ANALYZE)` and watch **`Rows Removed by Filter`**.

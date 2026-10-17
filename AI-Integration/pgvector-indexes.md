@@ -1,254 +1,437 @@
-# pgvector Indexes: HNSW & IVFFlat
+# pgvector Indexes: Overview, Comparison & Data Modeling
 
-A nearest-neighbor query —
-`ORDER BY embedding <=> :q LIMIT k` — is **exact** without an index: pgvector
-compares the query to *every* row. That is correct but O(rows); at millions of
-vectors it is far too slow. pgvector therefore provides two indexes that find the
-nearest vectors *approximately* but fast — its **ANN indexes (HNSW and
-IVFFlat)**:
+pgvector offers two approximate-nearest-neighbor (ANN) indexes to make
+`ORDER BY embedding <=> :q LIMIT k` fast at scale: **HNSW** and **IVFFlat**.
+Without an index this query is *exact* but scans every row — fine for thousands,
+far too slow for millions.
 
-- **HNSW** — a multilayer proximity graph.
-- **IVFFlat** — inverted lists built by k-means clustering.
+This is the **general** doc: how to choose between the two, and the
+engineering around them — **data modeling** (where the vector column lives) and
+**keeping vectors updated transactionally without slowing OLTP**. The mechanics
+of each index live in their own deep dives:
 
-**"ANN" = Approximate Nearest Neighbor** — the *category* of algorithm, not a
-third index type. HNSW and IVFFlat are the two ANN indexes pgvector ships;
-whenever this doc says "ANN index," it means "one of HNSW or IVFFlat." (Note: ANN
-here is *not* an artificial neural network — it is purely the search technique of
-finding approximately-closest vectors by skipping most of the data.)
+- **[pgvector-hnsw.md](pgvector-hnsw.md)** — graph index, the recommended default.
+- **[pgvector-ivfflat.md](pgvector-ivfflat.md)** — cluster index, cheaper to build.
 
-This doc explains how each works (with animations), the **correctness vs speed**
-balance they expose, how to operate them **at large scale**, and when to choose
-which. Internals verified against the pgvector 0.8.7 source (`../pgvector/src`)
-and behavior on PostgreSQL 18.6.
-
-Prerequisite reading: [embeddings-explained.md](embeddings-explained.md).
+"ANN" = Approximate Nearest Neighbor — the *category*; HNSW and IVFFlat are the
+two ANN indexes pgvector ships, not a third type. All behavior verified on
+PostgreSQL 18.6 + pgvector 0.8.7.
 
 ---
 
-## Operator classes (pick to match your distance)
+## 1. First, what does "closest" mean? Distance metrics as rulers
 
-Both index types need an operator class matching the distance you query with:
+To find the nearest vectors the database needs a **distance metric** — think of
+each as a different kind of **ruler**:
 
-| Distance operator | Operator class |
-|-------------------|----------------|
-| `<->` L2 | `vector_l2_ops` |
-| `<=>` cosine | `vector_cosine_ops` |
-| `<#>` inner product | `vector_ip_ops` |
+- **L2 / Euclidean (`<->`)** — the "as the crow flies" straight-line distance
+  (generalized Pythagoras). Includes magnitude: where the points actually sit.
+- **Cosine (`<=>`)** — ignores length, measures only the **angle** between
+  vectors. The most popular ruler for **text/topic** similarity, since meaning is
+  in direction, not length.
+- **Inner product (`<#>`)** — blends angle and magnitude. pgvector returns the
+  **negative** inner product so ascending sort still puts the most similar first.
 
-```sql
-CREATE INDEX ON items USING hnsw    (embedding vector_cosine_ops);
-CREATE INDEX ON items USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+Rarely used (and for specific data):
+
+- **L1 / Manhattan (`<+>`)** — sum of per-dimension distances (city-block).
+- **Hamming (`<~>`)** — binary (`bit`) vectors: number of differing bits.
+- **Jaccard (`<%>`)** — binary (`bit`) vectors: dissimilarity of the two bit sets.
+
+The index's **operator class must match the metric** you query with:
+
+| Operator | Metric | `vector` opclass |
+|----------|--------|------------------|
+| `<->` | L2 | `vector_l2_ops` |
+| `<=>` | cosine | `vector_cosine_ops` |
+| `<#>` | inner product | `vector_ip_ops` |
+| `<+>` | L1 | `vector_l1_ops` |
+
+(For `halfvec`/`sparsevec` use `halfvec_*_ops`/`sparsevec_*_ops`; for `bit`,
+`bit_hamming_ops` / `bit_jaccard_ops`.) An index built for one metric does **not**
+serve queries using another. See
+[embeddings-explained.md](embeddings-explained.md) for the metric math.
+
+---
+
+## 2. HNSW vs IVFFlat
+
+| | **HNSW** (graph) | **IVFFlat** (clusters) |
+|---|---|---|
+| Structure | multilayer neighbor graph | k-means lists + centroids |
+| Build speed | slow | **fast** |
+| Build memory | high | **low** |
+| Index size | larger | **smaller** |
+| Recall at a given latency | **better** | good (needs tuning) |
+| Needs data before building | no (works on empty) | **yes** (k-means) |
+| Dynamic / frequent updates | **robust**, fewer rebuilds | recall drifts, rebuild to recluster |
+| Build params | `m`, `ef_construction` | `lists` |
+| Query knob | `ef_search` (default 40) | `probes` (default 1) |
+
+### Measured: build time, memory sensitivity & index size
+
+Benchmark on **100,000 rows of `vector(384)`** (PostgreSQL 18.6, pgvector 0.8.7;
+heap ≈ 156 MB). Your absolute numbers will differ with hardware/dimensions, but
+the **relationships** are the point:
+
+| Metric | HNSW | IVFFlat |
+|--------|------|---------|
+| Build time @ default `maintenance_work_mem` (64 MB) | **16.1 s** | **8.3 s** |
+| Build time @ `maintenance_work_mem = 2 GB` | 11.0 s | 6.0 s |
+| Index size | 146–194 MB | ~159 MB |
+| Build-memory sensitivity | **spilled at ~28k tuples** on 64 MB → slower build | none |
+
+Reading the numbers:
+
+- **Build speed:** IVFFlat built ~**2× faster** than HNSW at the default memory
+  setting (8.3 s vs 16.1 s), and stayed faster even with ample memory (6.0 s vs
+  11.0 s). This is IVFFlat's headline advantage.
+- **Build memory:** HNSW emitted
+  `hnsw graph no longer fits into maintenance_work_mem after 28358 tuples` at the
+  default 64 MB and slowed down; raising `maintenance_work_mem` to 2 GB cut its
+  build from 16.1 s → 11.0 s. IVFFlat showed no such sensitivity. At scale, **HNSW
+  build time is gated by `maintenance_work_mem`** — size it to fit the graph.
+- **Index size:** comparable here (both roughly the heap size at 384 dims); HNSW
+  grows with `m`, IVFFlat is driven by row count. The "HNSW larger" gap widens
+  with higher `m` and higher dimensions.
+
+Reproduce with the demo scripts ([demo-hnsw.sql](demo-hnsw.sql),
+[demo-ivfflat.sql](demo-ivfflat.sql)) scaled up, or `\timing on` around a
+`CREATE INDEX` on your own data.
+
+### Estimating index size from rows & dimensions
+
+Both indexes scale **linearly in `rows × dimensions`** — the stored vector
+dominates. A `vector(d)` occupies `4·d + 8` bytes (4 bytes/float + varlena
+header). Calibrated against measured sizes (pgvector 0.8.7):
+
+```
+IVFFlat ≈ rows × (4·d + 8) × 1.10                 -- ~just the vectors + ~10% overhead
+HNSW    ≈ rows × (4·d + 8 + 12·m) × 1.10           -- vectors + graph links (~12·m B/row)
 ```
 
-An index built for one distance does **not** serve queries using another.
+(`m` = HNSW links/node, default 16 → the graph adds ≈192 B/row before overhead.)
 
----
+Calibration — formula vs actual:
 
-## IVFFlat — partition, then probe
+| rows × dim | IVFFlat est / actual | HNSW est / actual |
+|------------|----------------------|-------------------|
+| 50k × 128 | 27.3 / **28 MB** | 39.2 / **39 MB** |
+| 50k × 384 | 84.9 / **80 MB** | 95.5 / **97 MB** |
+| 1M × 384 (m=16) | ~1.7 GB | ~1.9 GB |
 
-![IVFFlat](animations/ivfflat.gif)
+Rules of thumb:
 
-**Build:** k-means clusters all stored vectors into `lists` cells; each list
-stores a **center** (centroid) and the vectors assigned to it.
+- **IVFFlat ≈ the raw vectors** (`rows × 4·d`, +~10%). `lists` adds only a handful
+  of centroid rows — negligible.
+- **HNSW ≈ IVFFlat + `rows × 12·m`** — roughly **15–25% larger** at 128–384 dims
+  with the default `m=16`. The relative gap **shrinks** as dimensions grow (the
+  `4·d` payload dominates) and **grows** if you raise `m`.
+- **`halfvec`** (2-byte floats) ≈ halves both: replace `4·d` with `2·d`.
+- These estimate the **index**; the table/heap also stores the vectors
+  (~`rows × (4·d + 8)`) unless you only keep them in the index's table.
 
-**Query:** compare the query to the `lists` **centers** only, then scan the
-`probes` nearest lists and skip the rest.
+Quick mental math (d=384, m=16): per *million* rows, budget ≈ **1.7 GB IVFFlat /
+1.9 GB HNSW** of index, plus a similar amount for the heap.
 
-```sql
-CREATE INDEX ON items USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
-SET ivfflat.probes = 10;   -- query-time; default 1
+### Sizing from text: chunks × dimensions → rows × bytes
+
+The formulas above need **rows** and **dimensions**. For a text/RAG workload those
+come from two *independent* decisions:
+
+**Row count = how you chunk the text.** Long text is split into chunks before
+embedding. Chunk size is measured in **tokens** (1 token ≈ 4 characters ≈ ¾ of an
+English word):
+
+| Chunk size | Tokens | ~Chars | Use |
+|-----------|--------|--------|-----|
+| Small | 128–256 | 500–1,000 | precise QA/FAQ retrieval |
+| **Medium (common default)** | **256–512** | **1,000–2,000** | general RAG |
+| Large | 512–1,024 | 2,000–4,000 | long-form, context-heavy |
+
+A typical default is **~500 tokens/chunk with ~10–15% overlap** (chunks share a
+little boundary text so ideas aren't split). Rough rule: **1 page of prose ≈ 500
+tokens ≈ 1 chunk**. Smaller chunks → more precise hits but *more rows*; larger
+chunks → fewer rows but fuzzier (the embedding averages more ideas).
+
+```
+rows ≈ total_tokens / (chunk_tokens × (1 − overlap))
 ```
 
-Key facts (from `src/ivfflat.h`):
+**Vector size = the model, NOT the chunk.** An embedding model emits a **fixed**
+dimension regardless of how much text the chunk contains — a 100-token and a
+500-token chunk both produce, e.g., a 1536-dim vector. So chunking sets the *row
+count*; the model sets the *bytes per vector*:
 
-- Defaults: **`lists = 100`**, **`probes = 1`**.
-- **IVFFlat needs data before you build it** — k-means has to learn the cluster
-  centers from existing rows. Building on an empty/tiny table gives poor lists;
-  pgvector will even warn. Load data first, then create the index.
-- List-count heuristic: **`rows / 1000`** for up to 1M rows, **`sqrt(rows)`** for
-  more than 1M rows.
-- Probe heuristic: start around **`sqrt(lists)`**.
+| Model | Dim | Bytes/vector (`4·d + 8`) |
+|-------|-----|--------------------------|
+| MiniLM `all-MiniLM-L6-v2` | 384 | ~1.5 KB |
+| OpenAI `text-embedding-3-small` | 1536 | ~6 KB |
+| OpenAI `text-embedding-3-large` | 3072 | ~12 KB |
+| BGE / E5 / Cohere (common) | 768–1024 | ~3–4 KB |
 
----
+**Worked example — 1 GB of text (~250M tokens):**
 
-## HNSW — navigate a graph
+1. Chunk at 500 tokens → `250M / 500` ≈ **500,000 chunks (rows)** (+~15% with overlap).
+2. Embed with `text-embedding-3-small` (1536-dim, ~6 KB/vector).
+3. Index size (from the formulas): IVFFlat ≈ `500k × 6152 × 1.1` ≈ **~3.4 GB**;
+   HNSW ≈ **~3.5 GB**; plus a similar amount of heap.
 
-![HNSW](animations/hnsw.gif)
+Note the embeddings are often **larger than the source text** (1 GB text →
+~3 GB of 1536-dim vectors). Control it by choosing a **smaller dimension** (384–768
+is plenty for many apps), truncating a Matryoshka model, or using **`halfvec`** —
+the dimension is the biggest lever on storage *and* memory, and (per
+[embeddings-explained.md](embeddings-explained.md)) hard to change later, so pick
+it deliberately.
 
-**Build:** every vector is linked to its nearest neighbors, in a hierarchy of
-layers. Upper layers are sparse (few nodes, long-range links) for coarse
-navigation; the bottom layer holds all nodes with short links.
+### Recall vs speed (the correctness balance)
 
-**Query:** greedy descent — start at the top entry point, repeatedly hop to the
-neighbor closest to the query, drop a layer, repeat, until the bottom layer
-yields the top-k.
+Both are **approximate** — they may miss true neighbors. Quality is **recall**
+(fraction of the true top-k returned), tuned per query: `ef_search` for HNSW,
+`probes` for IVFFlat. Higher = more recall, slower.
 
-```sql
-CREATE INDEX ON items USING hnsw (embedding vector_cosine_ops)
-  WITH (m = 16, ef_construction = 64);
-SET hnsw.ef_search = 40;   -- query-time; default 40
-```
+Measured on 20k clustered vectors, recall@10 vs exact:
 
-Key facts (from `src/hnsw.h`):
-
-- Defaults: **`m = 16`** (links per node), **`ef_construction = 64`** (build-time
-  candidate list), **`ef_search = 40`** (query-time candidate list).
-- **No training step** — unlike IVFFlat, an HNSW index can be created on an empty
-  table and grows as you insert.
-- Higher `m` / `ef_construction` → better recall, bigger index, slower build.
-
----
-
-## The correctness vs speed balance (recall)
-
-Both indexes are **approximate**: they may miss some true nearest neighbors. The
-quality metric is **recall** — the fraction of the true top-k that the index
-actually returns. Each index has a knob that trades recall for speed:
-
-| Index | Recall knob | Effect |
-|-------|-------------|--------|
-| HNSW | `hnsw.ef_search` (default 40) | larger = explore more of the graph = higher recall, slower |
-| IVFFlat | `ivfflat.probes` (default 1) | larger = scan more lists = higher recall, slower |
-
-Measured on 20,000 clustered 8-dim vectors, comparing each index's top-10 against
-the exact top-10 (verified on pgvector 0.8.7):
-
-| Setting | recall@10 |
-|---------|-----------|
-| HNSW `ef_search = 10` | 10/10 |
-| HNSW `ef_search = 40` (default) | 10/10 |
-| HNSW `ef_search = 100` | 10/10 |
+| | recall@10 |
+|---|---|
+| HNSW `ef_search = 10` / 40 / 100 | 10/10 |
 | **IVFFlat `probes = 1` (default)** | **4/10** |
-| IVFFlat `probes = 5` | 10/10 |
-| IVFFlat `probes = 20` | 10/10 |
+| IVFFlat `probes = 5` / 20 | 10/10 |
 
-The takeaways:
+Two lessons: HNSW reaches high recall at low settings (its strength), and the
+**IVFFlat default `probes = 1` is often too low** — tune it. To measure recall
+yourself, build a ground-truth top-k with the index disabled
+(`SET enable_indexscan = off`) and intersect it with the indexed result.
 
-- **The defaults are not automatically "correct."** IVFFlat at the default
-  `probes = 1` returned only **4 of the 10** true neighbors here — it scanned one
-  list and the rest sat in neighboring lists. Raising `probes` to 5 fixed it.
-  Always tune `probes` (start near `sqrt(lists)`) and measure recall.
-- **HNSW reaches high recall at low settings** on this data, which is the general
-  pattern: HNSW gives a better speed/recall tradeoff than IVFFlat, at the cost of
-  build time and memory.
-- **Exact search is still available** — just don't use the index (or set
-  `ivfflat.probes = lists`), when you need guaranteed-correct results and can
-  afford the scan.
+### Use-case guidance
 
-### How to measure recall yourself
+| Your situation | Index |
+|----------------|-------|
+| Real-time search / chatbot / recommendations (users waiting) | **HNSW** |
+| Frequently updated corpus (docs, events, IoT) | **HNSW** (robust to churn) |
+| Just starting / want a safe default | **HNSW** (mainly tune `ef_search`) |
+| Very large, mostly static; periodic batch/analytics | **IVFFlat** (small, fast build) |
+| Resource-constrained; care most about build time/size | **IVFFlat** |
+| Need guaranteed 100% recall, small table | no index (exact scan) |
+
+**Rule of thumb: start with HNSW.** It covers most cases well; drop to IVFFlat
+when build cost, size, or memory force it. Full mechanics:
+[pgvector-hnsw.md](pgvector-hnsw.md) · [pgvector-ivfflat.md](pgvector-ivfflat.md).
+
+---
+
+## 3. Data modeling: where does the vector column live?
+
+Two designs, with a clear default.
+
+### Option A — add a vector column to the existing table
 
 ```sql
--- 1. ground truth: exact top-k with the index disabled
-SET enable_indexscan = off;
-CREATE TABLE truth AS
-SELECT id FROM items ORDER BY embedding <=> :q LIMIT 10;
-RESET enable_indexscan;
-
--- 2. approximate top-k with the index, intersect with truth
-SET hnsw.ef_search = 40;   -- or ivfflat.probes = N
-SELECT count(*)   -- recall@10
-FROM (SELECT id FROM items ORDER BY embedding <=> :q LIMIT 10) r
-JOIN truth USING (id);
+ALTER TABLE documents ADD COLUMN embedding vector(384);
+CREATE INDEX ON documents USING hnsw (embedding vector_cosine_ops);
 ```
 
-Tune the knob up until recall meets your target, then stop (higher = slower).
+- **Pros:** simplest; no join; the embedding travels with the row.
+- **Cons:** widens a hot OLTP table with a large, frequently-rewritten column;
+  every `UPDATE` of the row interacts with the vector/index; the ANN index sits on
+  your primary table. Fine for modest tables where the row *is* the thing you
+  search.
 
-> **Approximate also affects filtering.** With an ANN index, a `WHERE` filter is
-> applied **after** the index returns its candidates. If the filter is selective,
-> you can get fewer rows than `LIMIT`. pgvector 0.8.0+ offers **iterative index
-> scans** (`hnsw.iterative_scan`, `ivfflat.iterative_scan`, bounded by
-> `hnsw.max_scan_tuples` / `ivfflat.max_probes`) that keep scanning until enough
-> rows pass the filter. See [hybrid-search.md](hybrid-search.md).
+### Option B — separate vector table, 1:1 by primary key (recommended at scale)
 
----
+Keep embeddings in their own table keyed by (and FK to) the base row, and **join
+when you need both**:
 
-## Operating at large scale
+```sql
+CREATE TABLE doc_embeddings (
+    document_id bigint PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+    embedding   vector(384),
+    model       text NOT NULL,          -- which model+version produced it
+    embedded_at timestamptz DEFAULT now()
+);
+CREATE INDEX ON doc_embeddings USING hnsw (embedding vector_cosine_ops);
+```
 
-The two indexes behave very differently once you reach millions of vectors with
-hundreds of dimensions. Plan for these:
+Query by joining on the PK and ordering by distance (verified plan):
 
-### Build time & memory
+```sql
+SELECT d.id, d.title
+FROM documents d
+JOIN doc_embeddings e ON e.document_id = d.id
+ORDER BY e.embedding <=> :q
+LIMIT 5;
+```
 
-- **HNSW builds are slow and memory-hungry.** The graph should fit in
-  `maintenance_work_mem` during build; if it doesn't, pgvector falls back to a
-  much slower on-disk build. For large tables raise it substantially for the
-  session:
-  ```sql
-  SET maintenance_work_mem = '8GB';   -- size to your data / RAM
-  ```
-- **Parallel builds.** Both support parallel index builds; more workers shorten
-  wall-clock build time:
-  ```sql
-  SET max_parallel_maintenance_workers = 7;   -- + planner/worker settings
-  ```
-- **IVFFlat builds much faster** and uses less memory, but recall depends on
-  good `lists` and enough data for k-means. At >1M rows use `lists ≈ sqrt(rows)`.
-- **Load-then-index** for IVFFlat (needs the data); for HNSW, bulk-loading data
-  first and building the index afterward is still far faster than inserting into
-  an existing HNSW index row by row.
+Why this is the better default at scale:
 
-### Memory at query time
+- **Isolates the churny vector + ANN index from the OLTP table** — base-row
+  updates don't touch the vector or its index, and vice-versa.
+- **Independent lifecycle:** rebuild/REINDEX the vector table, or re-embed with a
+  new model, without disturbing the primary table (`ON DELETE CASCADE` keeps it
+  tidy). The `model` column makes a model migration detectable and scoped.
+- **Optional sparsity:** rows that aren't embedded yet simply have no vector row.
+- The PK=FK makes the join cheap (1:1 on an indexed key).
 
-- HNSW query speed assumes the index is in RAM/cache. If the index is much larger
-  than `shared_buffers` + OS cache, latency degrades as it reads from disk. Size
-  memory to keep the hot index resident, or shard.
-- Consider **`halfvec`** (2-byte floats) to roughly halve index size/memory at a
-  small recall cost — valuable at scale and for dimensions up to the type limits
-  (`vector`/`halfvec` max 2000 dims).
-
-### Maintenance
-
-- **HNSW vacuum can be slow;** reindexing is often faster than vacuuming a heavily
-  updated HNSW index. Schedule accordingly.
-- Heavy update/delete churn degrades recall over time (dead tuples, graph
-  disconnection); periodic `REINDEX` restores it.
-- IVFFlat lists drift as data distribution changes; if the corpus grows or shifts
-  a lot after the initial k-means, **rebuild** to recluster.
-
-### Choosing parameters at scale (starting points)
-
-| | HNSW | IVFFlat |
-|---|------|---------|
-| Build cost | high (time + memory) | low |
-| Query speed/recall | best tradeoff | good, needs tuning |
-| Memory | high | lower |
-| Key build params | `m=16`, `ef_construction=64` (↑ for recall) | `lists ≈ rows/1000`, then `sqrt(rows)` >1M |
-| Key query param | `ef_search` (↑ for recall) | `probes ≈ sqrt(lists)` (↑ for recall) |
-| Rebuild trigger | heavy churn | distribution shift / big growth |
+> Multiple models or dimensions? Give each its own table/column keyed by the same
+> PK — never mix models in one `vector(N)` column (see
+> [embeddings-explained.md](embeddings-explained.md) on cross-model
+> compatibility).
 
 ---
 
-## When to use which
+## 4. Keeping vectors updated — transactionally, without slowing OLTP
 
-**Default to HNSW** for most production vector search: it gives the best
-speed/recall tradeoff, needs no training step, and handles incremental inserts
-well. Accept its slower, memory-heavier build.
+An embedding is produced by an **external model**, so — unlike a `tsvector` — it
+**cannot be a `GENERATED` column** (a generated column must be a pure, immutable
+SQL expression; calling a model is neither). The vector must be **written by your
+application or a worker.** The design question is *when*.
 
-**Choose IVFFlat** when:
+### The tension
 
-- build time / memory are constrained and you can afford to tune `probes`,
-- you can (re)build after the data is loaded and relatively stable,
-- the dataset is large and you want a smaller, cheaper-to-build index.
+- You want the vector to stay **consistent** with the source text.
+- You do **not** want to block an OLTP `INSERT`/`UPDATE` on a slow embedding call
+  (a model/API round-trip of tens to hundreds of ms would wreck OLTP latency and
+  hold row locks).
 
-**Use no index (exact)** for small tables (a few thousand rows) or when 100%
-recall is mandatory and latency allows — the planner will scan, which is correct
-by definition.
+### Anti-pattern: embed inline in the OLTP transaction
 
-Whatever you pick: **match the operator class to your distance, tune the recall
-knob and measure recall, and size memory for build and query.**
+Calling the model inside the same transaction that updates the row ties OLTP
+commit latency to model latency and lengthens lock hold times. Avoid for
+high-throughput OLTP.
+
+### Recommended: write a tiny marker in-transaction, embed asynchronously
+
+Keep the OLTP transaction fast by having it record only that the row **needs**
+(re)embedding; a background worker does the expensive model call and writes the
+vector afterward. A trigger makes the marker automatic and transactional:
+
+```sql
+-- a small queue of rows needing (re)embedding
+CREATE TABLE embedding_queue (
+    document_id bigint PRIMARY KEY,
+    enqueued_at timestamptz DEFAULT now()
+);
+
+CREATE FUNCTION enqueue_embedding() RETURNS trigger AS $$
+BEGIN
+  INSERT INTO embedding_queue (document_id) VALUES (NEW.id)
+  ON CONFLICT (document_id) DO UPDATE SET enqueued_at = now();
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+
+-- fire only when the embedded text actually changes
+CREATE TRIGGER trg_enqueue
+  AFTER INSERT OR UPDATE OF body ON documents
+  FOR EACH ROW EXECUTE FUNCTION enqueue_embedding();
+```
+
+Now an OLTP update stays fast — it only writes a tiny queue row in the same
+transaction, no model call inline (verified):
+
+```sql
+UPDATE documents SET body = 'new text' WHERE id = 1;
+-- embedding_queue now has (1, now()); OLTP latency unaffected
+```
+
+A worker then, out of band. **For multiple concurrent workers, the claim must use
+`FOR UPDATE SKIP LOCKED`** so workers grab *different* rows instead of blocking on
+each other (a plain `DELETE … RETURNING` with the same `ORDER BY ... LIMIT` makes
+every worker target the same rows — they serialize on row locks, and all but one
+wake up to find the rows already gone). The robust pattern combines the two:
+select-with-skip-locked inside, delete-returning outside:
+
+```sql
+-- claim a BATCH of up to N rows, skipping rows other workers hold
+DELETE FROM embedding_queue
+WHERE document_id IN (
+    SELECT document_id FROM embedding_queue
+    ORDER BY enqueued_at
+    FOR UPDATE SKIP LOCKED
+    LIMIT 100                      -- batch size (see below)
+)
+RETURNING document_id;
+```
+
+```text
+loop:
+  claim a batch   (the DELETE ... SKIP LOCKED above, in its own short txn)
+  fetch the current body for those document_ids
+  call the embedding model ONCE for the whole batch (the slow part — outside any OLTP txn)
+  UPSERT the vectors into doc_embeddings (with model + embedded_at)
+  commit
+```
+
+**Transactional guarantees you keep:** the enqueue is part of the OLTP
+transaction, so if that transaction rolls back, the row is *not* queued — the
+queue never references uncommitted work. The embedding is **eventually
+consistent**: there's a short window where the row is updated but its vector is
+stale/absent, which is virtually always acceptable for semantic search.
+
+### Lower-latency signal: `LISTEN`/`NOTIFY`
+
+Instead of (or with) polling the queue, the trigger can notify a listening worker
+so it reacts within milliseconds:
+
+```sql
+CREATE FUNCTION notify_embedding() RETURNS trigger AS $$
+BEGIN
+  PERFORM pg_notify('embedding_jobs', NEW.id::text);
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+-- worker runs: LISTEN embedding_jobs;  and re-embeds on each notification
+```
+
+Keep the durable **queue table** as the source of truth (NOTIFY is best-effort and
+not delivered to workers that aren't connected); use NOTIFY only to wake the
+worker promptly. `SKIP LOCKED` lets you run several workers in parallel safely.
+
+### Batch the embeddings — don't embed one row at a time
+
+Embed in **batches**, not per row — it matters for both cost and throughput:
+
+- **Cost:** hosted embedding APIs accept many texts per request and often enforce
+  **request-count** limits separate from token limits. One request of 100 texts
+  instead of 100 requests means ~100× fewer round-trips and far less chance of
+  hitting rate caps (token cost is similar either way).
+- **Throughput:** models (local or API) process a batch far more efficiently than
+  N separate calls — accelerators favor batched math, and you amortize fixed
+  per-call overhead (network, tokenizer, model warmup). On the DB side, one
+  multi-row `UPSERT` and one queue-claim per batch means fewer transactions, less
+  lock churn, and less WAL.
+
+So the worker claims a batch (via the `SKIP LOCKED` delete), calls the model
+**once** for all texts in the batch, and does **one** multi-row `UPSERT`.
+
+Batch-size tradeoffs: bigger batches = better throughput/cost but more memory,
+slower time-to-first-result, and a larger retry blast radius; smaller batches =
+fresher vectors sooner and smoother retries but more overhead. **Start around 100
+rows/batch with a few parallel `SKIP LOCKED` workers**, and respect the provider's
+max inputs/tokens per request. Per-row embedding is only reasonable for real-time
+single-item needs (e.g. embedding a user's search query) or very low volume.
+
+### If you truly need read-after-write consistency
+
+Options, in order of preference: embed in a `BEFORE` trigger only if the model is
+local and fast enough (rare); or compute the embedding in the app **before**
+`COMMIT` and write it in the same statement — accepting the added latency on that
+path. For most systems the async queue is the right trade-off.
 
 ---
 
 ## Summary
 
-1. ANN indexes trade exactness for speed; quality is measured as **recall**.
-2. **IVFFlat** = k-means lists + `probes`; needs data before build; default
-   `probes = 1` is often too low (measured 4/10 recall) — tune toward
-   `sqrt(lists)`.
-3. **HNSW** = multilayer graph + `ef_search`; no training step; best speed/recall
-   but slower, heavier builds.
-4. At **large scale**: raise `maintenance_work_mem`, use parallel builds,
-   load-then-index, consider `halfvec`, keep the index in memory, and
-   `REINDEX`/rebuild to recover recall after churn.
-5. Match the **operator class** to the distance; measure recall; prefer **HNSW**
-   unless build cost/memory push you to **IVFFlat**.
+1. Pick the metric (ruler) first; the index **operator class must match** it.
+2. **HNSW** = graph, high recall, robust to updates, the **default**; **IVFFlat** =
+   clusters, cheap/small build, needs data first, for large static/batch data.
+   Tune recall (`ef_search` / `probes`) and **measure** — IVFFlat's default
+   `probes = 1` is often too low.
+3. **Data model:** prefer a **separate vector table keyed 1:1 by PK** (join on
+   demand) to isolate the churny vector + ANN index from the OLTP table; a column
+   on the base table is fine for small/simple cases.
+4. **Updates:** embeddings can't be a `GENERATED` column — write them from an
+   app/worker. Keep OLTP fast by enqueuing a **tiny marker in-transaction** (trigger)
+   and embedding **asynchronously** (queue + optional `LISTEN/NOTIFY`,
+   `SKIP LOCKED` for parallel workers); accept eventual consistency.
+5. Deep dives: [pgvector-hnsw.md](pgvector-hnsw.md) ·
+   [pgvector-ivfflat.md](pgvector-ivfflat.md); hybrid filtering:
+   [hybrid-search.md](hybrid-search.md).
