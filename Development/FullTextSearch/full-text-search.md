@@ -582,7 +582,95 @@ index + post-filter), or join nodes (predicates on different tables).
 
 ---
 
-## 10. Multi-language full-text search
+## 10. Speeding up `tsvector` queries
+
+The single biggest speedup is a **GIN index** on the `tsvector`; most other
+tuning is secondary. Measured on PostgreSQL 18.6, 200,000 rows, a selective
+query (`to_tsquery('english','rareword')` matching ~20 rows):
+
+| | Plan | Time | Buffers |
+|---|------|------|---------|
+| No index | Parallel Seq Scan | 19.2 ms | 3742 |
+| GIN index | Bitmap Index Scan | **0.054 ms** | **24** |
+
+```sql
+CREATE INDEX idx_doc_tsv ON doc USING gin (tsv);
+```
+```
+ Aggregate
+   ->  Bitmap Heap Scan on doc
+         Recheck Cond: (tsv @@ '''rareword''')
+         ->  Bitmap Index Scan on idx_doc_tsv   (actual rows=20)
+ Execution Time: 0.054 ms
+```
+
+A ~350× improvement on the selective case. Beyond simply having the index, the
+techniques that matter:
+
+### 10a. Materialize the vector in a stored generated column
+
+Don't recompute `to_tsvector(...)` on every query. A `GENERATED ALWAYS AS (...)
+STORED` column computes it once at write time and lets you index it directly (see
+§5). This avoids per-query CPU for parsing/stemming and keeps the query a pure
+index lookup.
+
+### 10b. Tune GIN's pending list (`fastupdate`)
+
+GIN buffers new entries in an unsorted **pending list** and merges them in bulk,
+which speeds up inserts but means reads must also scan the pending list until it
+is flushed. The relevant knobs:
+
+```sql
+-- per-index:
+CREATE INDEX idx_doc_tsv ON doc USING gin (tsv)
+  WITH (fastupdate = on, gin_pending_list_limit = 4096);  -- limit in kB
+
+-- cluster default (kB):
+SHOW gin_pending_list_limit;   -- default 4MB
+```
+
+- Keep `fastupdate = on` (default) for write-heavy tables; the pending list
+  absorbs insert cost.
+- If **read** latency matters and the pending list grows large, lower
+  `gin_pending_list_limit` (flush sooner) or `VACUUM` the table to flush it, so
+  searches don't pay to scan unmerged entries.
+- For bulk loads, a common pattern is to drop/disable the index, load, then
+  rebuild.
+
+### 10c. Limit candidate work on huge result sets
+
+`gin_fuzzy_search_limit` (default `0` = unlimited) caps how many results a single
+GIN scan returns, trading completeness for bounded latency on queries that would
+otherwise match enormous numbers of rows. Leave it `0` unless you have such a
+pathological query.
+
+### 10d. Combine with scalar predicates efficiently
+
+If you frequently filter FTS results by a scalar column (`WHERE tsv @@ q AND
+category = 'news'`), the planner can `BitmapAnd` a GIN index with a B-tree (§9).
+When the scalar is *always* present and selective, a **`btree_gin`** composite
+index lets one index serve both:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS btree_gin;
+CREATE INDEX idx_doc_cat_tsv ON doc USING gin (category, tsv);
+```
+
+### 10e. Keep ranking off the hot path
+
+`ts_rank`/`ts_rank_cd` are **not** indexed — they run on the rows the index
+returns (§7). For large candidate sets, apply a selective `@@` first, then
+`ORDER BY ts_rank(...) LIMIT n`, so ranking only touches the narrowed set. Avoid
+ranking before filtering.
+
+> Not covered here: third-party indexes such as RUM (which can store positions
+> for faster ranking and phrase search) are an option for ranking-heavy
+> workloads, but they are extensions outside the core distribution and are not
+> installed in this environment.
+
+---
+
+## 11. Multi-language full-text search
 
 A `tsvector` is only meaningful for **one** language, because stemming and
 stop-word removal are language-specific (`to_tsvector('english','running')` →
