@@ -182,23 +182,33 @@ most of these cons apply fully only to the *second* (commit-claim-first) variant
 
 > **Why is holding the transaction open across the slow step OK here, when the
 > usual advice is "never hold a transaction open across a slow call"?**
-> Because that advice is about the **OLTP table** — the hot table serving
-> user-facing traffic. This transaction is on the **queue table**, which nothing
-> does OLTP on. Holding it open across the slow step:
+> Partly. That advice is about the **OLTP table** — the hot table serving
+> user-facing traffic — and this transaction is on the **queue table**. Holding it
+> open across the slow step:
 >
-> - **locks only the claimed queue rows**, which `SKIP LOCKED` already hides from
->   other workers — so **no OLTP writer is blocked**; OLTP never touches these rows
->   beyond the tiny enqueue;
-> - **decouples OLTP latency from processing latency**, which is the entire reason
->   the queue exists — the OLTP transaction committed long ago.
+> - **locks only the claimed queue rows**, hidden from *other workers* by
+>   `SKIP LOCKED`;
+> - **decouples OLTP latency from processing latency** *for the common case* — the
+>   OLTP transaction that enqueued committed long ago.
 >
-> So **variant 1 (one transaction on the queue table)** gives you *both* crash
-> safety *and* zero OLTP impact. Its only real cost is a longer-lived worker
-> transaction holding a snapshot open, which adds some dead-tuple/vacuum pressure
-> **on the queue table** (handled by §4's autovacuum recipe) and matters only if
-> the processing step is extremely long. Prefer variant 1; reach for variant 2
-> only when the slow step genuinely cannot run inside any transaction (e.g. it must
-> not pin a snapshot at all) and a lost batch is acceptable.
+> **But there is a real exception, so this is not unconditionally "zero OLTP
+> impact."** If the OLTP write path itself writes to the queue — e.g. an **enqueue
+> trigger** doing `INSERT … ON CONFLICT (id) DO UPDATE` — and a *new* OLTP write
+> lands on the **same id** a worker is currently holding `FOR UPDATE` mid-step, that
+> enqueue **blocks on the worker's row lock for the whole slow step**, and the OLTP
+> transaction stalls with it. Verified: a worker holding the lock across a 4 s
+> "embed" made a concurrent OLTP `UPDATE` to that row wait **~3 s**; switching the
+> worker to variant 2 (claim commits before the slow step) dropped it to **~12 ms**.
+>
+> So **variant 1** gives crash safety and *no OLTP impact **only when nothing on the
+> OLTP path writes the claimed row*** (no enqueue-by-trigger, or collisions on the
+> same key are rare and the slow step is short). **When an OLTP trigger enqueues
+> onto the same keys workers hold — the usual embedding-pipeline setup — prefer
+> variant 2 (UPDATE-to-processing):** claim + mark in a short txn, **commit** (so
+> the lock is released), run the slow step outside any transaction, finish in
+> another short txn. Then a concurrent OLTP write never waits on a model call.
+> Variant 1's other cost — a longer-lived snapshot adding queue-table vacuum
+> pressure — still applies.
 
 **Choose DELETE-on-claim when** you don't need attempt counts, dead-lettering, or
 in-flight visibility. Use **variant 1** (single transaction) by default — it's
@@ -332,10 +342,14 @@ i.e. most "real" job queues.
 rows reappear on rollback), or commit the claim first and process after (no
 open transaction during the slow step, but a crash loses the batch). Either way
 the transaction is on the **queue table**, not an OLTP table — so holding it open
-blocks no OLTP writer (`SKIP LOCKED` hides the claimed rows) and doesn't pin the
-OLTP hot table's horizon. The cost of the one-transaction shape is a longer-lived
-snapshot adding dead-tuple pressure **on the queue table** (handled by the
-autovacuum recipe below) and matters only if the slow step is extremely long.
+doesn't pin the OLTP hot table's horizon, and `SKIP LOCKED` hides the claimed rows
+from other *workers*. **One caveat:** if an OLTP **enqueue trigger** writes the
+queue (`INSERT … ON CONFLICT` on the same key a worker holds), a concurrent OLTP
+write to that key **blocks on the worker's row lock for the whole slow step** — so
+the one-transaction shape is *not* zero-impact in that setup (see §2's note).
+There, use the commit-claim-first shape so the lock is released before the slow
+step. The one-transaction shape's other cost is a longer-lived snapshot adding
+dead-tuple pressure **on the queue table** (handled by the autovacuum recipe below).
 UPDATE-to-processing (§3) always uses short claim/finish transactions with the
 slow step strictly between them, and leans on the reaper for crash recovery.
 
@@ -544,11 +558,12 @@ timeout → retry) from *permanent* ones (empty/oversized text, unsupported cont
 3. **UPDATE-to-processing** — status + `attempts` + `claimed_at` + a **reaper** that
    re-queues stale `processing` rows. Crash-safe, at-least-once (make consumers
    idempotent), observable; more moving parts.
-4. Shared: the claim/finish transactions live on the **queue table**, so holding
-   one open across the slow step blocks no OLTP writer (`SKIP LOCKED` hides claimed
-   rows) — the only cost is queue-table vacuum pressure. Index the ordering column
-   (partial index on the claimable status), tune autovacuum for the churn, and
-   treat empty claims as "retry later."
+4. Shared: the claim/finish transactions live on the **queue table**, not the OLTP
+   hot table. Holding one open doesn't pin the OLTP horizon — **but** if an OLTP
+   enqueue trigger writes the same queue key a worker holds, a concurrent OLTP write
+   blocks on that lock for the slow step; use commit-claim-first there. Index the
+   ordering column (partial index on the claimable status), tune autovacuum for the
+   churn, and treat empty claims as "retry later."
 5. **Dead-letter queue (§6):** after an attempt cap, move poison items to a side
    table so healthy work keeps flowing. B does it in the reaper (it already has
    `attempts`); A needs an out-of-band `attempts` counter or re-enqueue-with-count.

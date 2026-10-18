@@ -127,8 +127,10 @@ embeds the document's *current* committed text, never the superseded v2…v5. Th
 coalesced job means "embed whatever this document looks like now" — which is exactly
 what you want. So a burst of edits costs **one** embedding, not one per edit.
 
-> **Edge case: an update arrives while a worker is mid-embed.** This is safe, and
-> the reason is lock ordering (verified on PG 18.6). The §4 worker claims the queue
+> **Edge case: an update arrives while a worker is mid-embed.** For *correctness*
+> this is safe (no lost intent), but note the lock-blocking below has a
+> **performance** cost — see the ⚠️ note in §4. The reason it's correct is lock
+> ordering (verified on PG 18.6). The §4 worker claims the queue
 > row with `SELECT … FOR UPDATE` and holds that lock across the slow `embed()` — it
 > does **not** delete the row until the end. So when the new update's trigger runs
 > `INSERT … ON CONFLICT (document_id) DO UPDATE`, it finds the row **locked** and
@@ -138,12 +140,12 @@ what you want. So a burst of edits costs **one** embedding, not one per edit.
 > one version behind, but a pending job for the new text always exists, so the next
 > worker pass re-embeds it. **No intent is lost.**
 >
-> (What would lose intent is deleting the claimed row in a *separate committed
-> transaction* before embedding, so a new enqueue could slip in and then be
-> deleted — our single-transaction worker never does this. If you need the vector
-> to never lag even briefly, use UPDATE-to-processing with a changed-during-run
-> re-check, per
-> [postgresql-as-queue-table.md](../Performance/postgresql-as-queue-table.md) §3.)
+> **The cost of that blocking:** the new update is an *OLTP write*, so it stalls for
+> the rest of the embed (§4's ⚠️). UPDATE-to-processing (claim commits before the
+> embed) fixes the stall — and keeps this no-lost-intent property, because a job
+> whose row changed during processing is re-queued rather than deleted. If you need
+> the vector to never lag even briefly, add a changed-during-run re-check per
+> [postgresql-as-queue-table.md](../Performance/postgresql-as-queue-table.md) §3.
 
 ---
 
@@ -208,9 +210,26 @@ until it returns 0. The production-grade properties, all from our earlier docs:
   at-least-once delivery.
 - **per-job `EXCEPTION`** — one poison row fails alone and is rescheduled, not the
   whole batch.
-- The slow `embed()` touches no `documents` lock — the queue is a disposable table,
-  so holding its transaction is fine (the OLTP-vs-queue distinction in
-  [postgresql-as-queue-table.md](../Performance/postgresql-as-queue-table.md) §2).
+- The slow `embed()` holds no lock on the `documents` row, so it can't pin the OLTP
+  hot table's horizon.
+
+> **⚠️ But this worker as written CAN still stall OLTP — read this.** The worker
+> above holds `SELECT … FOR UPDATE` on the `embedding_queue` row across the slow
+> `embed()`. Our enqueue trigger runs on the **OLTP write path** and does
+> `INSERT … ON CONFLICT (document_id) DO UPDATE` on that same queue row. So if a new
+> OLTP `UPDATE` to a document lands while a worker is mid-embed on it, the trigger's
+> `ON CONFLICT` **blocks on the worker's lock for the entire model call**, and the
+> OLTP write stalls with it. Measured on PG 18.6: a 4 s embed made a concurrent OLTP
+> `UPDATE` wait **~3 s** — the exact OLTP coupling the queue was supposed to remove.
+>
+> **Fix — don't hold the queue-row lock across `embed()`.** Use
+> UPDATE-to-processing: claim and mark the row in a **short** transaction, **commit**
+> (releasing the lock), run `embed()` **outside any transaction**, then upsert and
+> clear the job in a second short transaction. With the lock released before the
+> slow step, the same concurrent OLTP `UPDATE` dropped to **~12 ms**. See
+> [postgresql-as-queue-table.md](../Performance/postgresql-as-queue-table.md) §2–§3.
+> The single-transaction shape is fine only if **nothing on the OLTP path writes the
+> claimed key** (no enqueue-by-trigger) — which is *not* our setup.
 
 > **Claim style:** this deletes on success (DELETE-on-claim). Because the whole
 > claim→embed→upsert is one transaction, a crashed worker rolls back and the row
