@@ -70,6 +70,19 @@ SQL and application-side examples for building on PostgreSQL.
 - [Java/](Development/Java/) — JDBC examples ([index](Development/Java/README.md)); incl. [prepared-statement plan-cache demo](Development/Java/jdbc-prepared-statement-plan-cache.md)
 - [datasets/](Development/datasets/) — sample datasets and their loader scripts ([load-data-t-oil.sql](Development/datasets/load-data-t-oil.sql), [load-data-daily-equity-volumes.sql](Development/datasets/load-data-daily-equity-volumes.sql), [query-daily-equity-volumes.sql](Development/datasets/query-daily-equity-volumes.sql))
 
+### AI-Integration
+PostgreSQL in AI workloads: vector similarity search, embeddings, and production embedding pipelines.
+
+- [pgvector-installation.md](AI-Integration/pgvector-installation.md) — installing the `pgvector` extension (Debian/Ubuntu, other platforms, managed services), enabling it per database, and a smoke test
+- [embeddings-explained.md](AI-Integration/embeddings-explained.md) — what embeddings are, how pgvector stores/compares them, cross-model compatibility, `normalize_embeddings`, and cosine/L2/inner-product similarity
+- [local-embeddings-minilm.md](AI-Integration/local-embeddings-minilm.md) — generating embeddings locally with `sentence-transformers` (MiniLM), a smoke test with verified output, and storing/querying in pgvector — no API key ([generate_embeddings.py](AI-Integration/generate_embeddings.py))
+- [pgvector-indexes.md](AI-Integration/pgvector-indexes.md) — ANN index overview & comparison: distance metrics, HNSW-vs-IVFFlat, recall-vs-speed, data modeling, transactional updates, and batch-processing-vs-batch-embedding (OpenAI vs Bedrock Titan) ([animations/](AI-Integration/animations/README.md))
+- [pgvector-hnsw.md](AI-Integration/pgvector-hnsw.md) — HNSW deep dive: graph internals, `m` / `ef_construction` / `ef_search`, build & query tuning ([demo-hnsw.sql](AI-Integration/demo-hnsw.sql))
+- [pgvector-ivfflat.md](AI-Integration/pgvector-ivfflat.md) — IVFFlat deep dive: k-means lists, `lists` / `probes`, build-after-data, measured recall ([demo-ivfflat.sql](AI-Integration/demo-ivfflat.sql))
+- [hybrid-search.md](AI-Integration/hybrid-search.md) — combining pgvector with scalar (B-tree) filters and full-text (GIN) search; filter-after-ANN, partial indexes, and Reciprocal Rank Fusion (RRF)
+- [embedding-pipeline-patterns.md](AI-Integration/embedding-pipeline-patterns.md) — production-grade async embedding pipeline: two-speeds-of-truth, triggers-enqueue-not-embed, a multi-entity job queue + batched concurrent worker, pipeline-level retry (`next_run_at` + backoff), change detection (sha256) + cascade re-embedding, `LISTEN/NOTIFY` vs micro-batching, a query-embedding cache with TTL, and model versioning ([generate_embeddings_with_retries.py](AI-Integration/generate_embeddings_with_retries.py), [generate_embeddings_batched.py](AI-Integration/generate_embeddings_batched.py))
+- Overview: [AI-Integration/README.md](AI-Integration/README.md)
+
 ### Extension
 PostgreSQL extensions and low-level inspection.
 
