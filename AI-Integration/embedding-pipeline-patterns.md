@@ -97,6 +97,46 @@ edits of the same document collapse into one job (the trigger from
 > `entity` discriminator column — but don't reach for that until you actually have
 > a second entity. Start simple.
 
+### How many queue rows if a document is updated many times?
+
+**Exactly one — no matter how many updates, or how many concurrent sessions.** This
+is the payoff of keying the queue by `document_id` (the primary key) rather than by
+update *event*. Two things guarantee it, both verified on PG 18.6:
+
+- **The PK + `ON CONFLICT (document_id) DO UPDATE`** means a second enqueue for the
+  same document can't insert a new row — it just re-stamps `enqueued_at` on the
+  existing one. Five rapid `UPDATE`s to one document → **1** queue row.
+- **Concurrent sessions can't race in two rows.** A second session updating the
+  same `documents` row **blocks** on PostgreSQL's row write-lock until the first
+  commits, so the two trigger firings are *serialized*, not simultaneous — the
+  second sees the row the first enqueued and coalesces into it. (Verified: session
+  B's update waited on session A's open transaction, and afterward there was still
+  one queue row.)
+
+This directly avoids the two failure modes a naive **log-style** queue (a
+`bigserial` PK, one row per update) would create:
+
+| Concern | Log-style queue (one row per update) | Our coalesced queue (keyed by `document_id`) |
+|---------|--------------------------------------|---------------------------------------------|
+| Multiple workers grab the same document | possible (N rows for one doc) | impossible — 1 row, claimed by 1 worker via `SKIP LOCKED` |
+| Intermediate versions wasted on embedding | yes — v2…v5 each get embedded | no — see below |
+
+**Why intermediate versions aren't wasted:** the worker reads the body **fresh at
+embed time** (`SELECT body INTO v_text FROM documents WHERE id = …`), so it always
+embeds the document's *current* committed text, never the superseded v2…v5. The one
+coalesced job means "embed whatever this document looks like now" — which is exactly
+what you want. So a burst of edits costs **one** embedding, not one per edit.
+
+> **One honest edge case.** If a worker has already *claimed* a document and is
+> mid-embed (model call in flight) when a new update lands, the new update
+> re-stamps the queue row — but the worker will `DELETE` that row on success,
+> potentially discarding the re-enqueue, leaving the vector one version behind until
+> the next edit. In practice this window is small and the content-hash guard (§7)
+> plus the next edit heal it; if you need strictness, switch the worker to
+> UPDATE-to-processing (mark `running`, re-check/re-queue if the row changed during
+> processing) per
+> [postgresql-as-queue-table.md](../Performance/postgresql-as-queue-table.md) §3.
+
 ---
 
 ## 4. The worker: claim due jobs, embed, upsert — idempotently
@@ -229,8 +269,53 @@ every few seconds in small batches — simpler, and usually "real-time enough."
 
 A `documents` UPDATE can fire the enqueue trigger even when the embedded text didn't
 really change — and every needless re-embed is latency and (for hosted APIs) money.
-Cheap fix: remember a fingerprint of the exact text we embedded, and skip the model
-call when it matches.
+There are **three** places to catch this, each cheaper and earlier than the last;
+use them together.
+
+**Layer 1 — fire the trigger only for relevant columns (`UPDATE OF`).** This is an
+out-of-the-box trigger feature: restrict firing to the columns the embedding
+depends on, so updates to unrelated columns (a `views` counter, `updated_at`) never
+even invoke the trigger:
+
+```sql
+CREATE TRIGGER trg_enqueue
+  AFTER INSERT OR UPDATE OF body, title ON documents   -- only these columns fire it
+  FOR EACH ROW EXECUTE FUNCTION enqueue_embedding();
+```
+
+Caveat: `UPDATE OF` keys on *which columns were assigned*, not whether the value
+changed — `UPDATE documents SET body = body` still fires it. That's what layer 2 is
+for.
+
+**Layer 2 — enqueue only if a value actually changed (`IS DISTINCT FROM`).** Inside
+the trigger, compare old vs new. Use `IS DISTINCT FROM` (NULL-safe) rather than
+`<>`:
+
+```sql
+CREATE OR REPLACE FUNCTION enqueue_embedding() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF TG_OP = 'INSERT'
+       OR OLD.body  IS DISTINCT FROM NEW.body
+       OR OLD.title IS DISTINCT FROM NEW.title
+    THEN
+        INSERT INTO embedding_queue (document_id) VALUES (NEW.id)
+        ON CONFLICT (document_id) DO UPDATE SET enqueued_at = now();
+    END IF;
+    RETURN NEW;
+END $$;
+```
+
+This catches the "assigned the same value" case layer 1 can't — no queue row is
+written at all.
+
+**Layer 3 — skip the model call if the *composed* text is unchanged (content
+hash).** Layers 1–2 only see raw `documents` columns, but the embedded text is often
+*composed* (e.g. `body || ' ' || title`, maybe plus a referenced label). Two
+different edits can still yield the **same** final string (whitespace trimming, a
+change that doesn't survive concatenation), and the referenced-row re-enqueue below
+doesn't change `documents` at all. So the last and most accurate guard fingerprints
+the exact text we're about to embed:
 
 ```sql
 ALTER TABLE doc_embeddings ADD COLUMN IF NOT EXISTS content_hash text;
@@ -261,6 +346,18 @@ ON CONFLICT (document_id) DO UPDATE
 
 Fewer calls, less work per batch, and correctness preserved — a genuine text change
 always re-embeds because its hash differs.
+
+The three layers act at different stages, each skipping cheaper work earlier
+(verified on PG 18.6):
+
+| Layer | Mechanism | Skips when… | Avoids |
+|-------|-----------|-------------|--------|
+| 1 | `UPDATE OF body, title` | the update didn't touch an embedded column | the trigger firing at all |
+| 2 | `OLD.col IS DISTINCT FROM NEW.col` | an embedded column was assigned its same value | writing a queue row |
+| 3 | `sha256` of the composed text | different edits produce the same embedded string | the model API call |
+
+Keep all three: 1 and 2 are nearly free and shrink the queue; 3 is the only one that
+also covers composed text and the referenced-row case below.
 
 ### When a *referenced* row changes
 
@@ -391,8 +488,12 @@ which is why this is data infrastructure, not a one-off script.
 5. **Backoff** — `min(300, 2^attempts) + jitter`; exhausted jobs are the
    dead-letter set.
 6. **Notify** optionally shortens latency; the queue stays the source of truth.
-7. **Hash the embedded text** to skip unchanged re-embeds; re-enqueue documents
-   when a *referenced* row changes.
+7. **Three change-detection layers** — `UPDATE OF` (fire only for embedded
+   columns), `IS DISTINCT FROM` (enqueue only on real value change), and a `sha256`
+   content hash (skip the model call when the composed text is unchanged);
+   re-enqueue documents when a *referenced* row changes. A document edited N times
+   (even concurrently) coalesces into **one** queue row and costs **one** embed of
+   the latest text.
 8. **Query embeddings** are a separate, cacheable concern — key by
    `(query_text, model_id)`, evict by TTL.
 9. **Tag vectors with `model_id`** and plan cutover vs parallel-run upgrades; never
