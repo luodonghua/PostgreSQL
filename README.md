@@ -82,7 +82,7 @@ PostgreSQL in AI workloads: vector similarity search, embeddings, and production
 - [pgvector-ivfflat.md](AI-Integration/pgvector-ivfflat.md) — IVFFlat deep dive: k-means lists, `lists` / `probes`, build-after-data, measured recall ([demo-ivfflat.sql](AI-Integration/demo-ivfflat.sql))
 - [hybrid-search.md](AI-Integration/hybrid-search.md) — combining pgvector with scalar (B-tree) filters and full-text (GIN) search; filter-after-ANN, partial indexes, and Reciprocal Rank Fusion (RRF)
 - [embedding-pipeline-patterns.md](AI-Integration/embedding-pipeline-patterns.md) — production-grade async embedding pipeline on our `documents` → `embedding_queue` → `doc_embeddings` flow: two clocks (transactional vs semantic), enqueue-don't-embed, a worker with scheduled retry (`attempts`/`next_run_at`/backoff) over `FOR UPDATE SKIP LOCKED`, content-hash skip of unchanged re-embeds, re-enqueue on referenced-row change, `LISTEN/NOTIFY` vs polling, a `(query_text, model_id)` query cache with TTL, and `model_id` versioning ([generate_embeddings_with_retries.py](AI-Integration/generate_embeddings_with_retries.py), [generate_embeddings_batched.py](AI-Integration/generate_embeddings_batched.py))
-- [postgres-tooling-checklist.md](AI-Integration/postgres-tooling-checklist.md) — vendor-neutral checklist for choosing & operating PostgreSQL tools (migration, tuning, operational/AI & MCP): privilege/locus classification, least-privilege read-only roles, row caps + `statement_timeout`, dynamic-SQL validation, query-views-not-tables, prompt-injection defense, observability logging, and external-API/secrets/egress hygiene
+- [postgres-tooling-checklist.md](AI-Integration/postgres-tooling-checklist.md) — security & operations checklist for integrating AI tools with the database (MCP query servers, SQL-writing assistants, AIOps agents): treat the tool as an untrusted client — least-privilege read-only role, views-not-tables, RLS for tenant isolation, validate model-generated SQL (SELECT-only/single-statement/allow-listed/parameterized), row caps + `statement_timeout` + connection caps, answer-only-from-rows, observability logging, and model-call/secrets/egress hygiene
 - Overview: [AI-Integration/README.md](AI-Integration/README.md)
 
 ### Extension
@@ -95,6 +95,7 @@ Authentication, authorization, and access control.
 
 - [postgresql-security.sql](Security/postgresql-security.sql) — general security examples
 - [schema-usage-privilege.md](Security/schema-usage-privilege.md) — schema-level `USAGE` vs object privileges, walked through two sessions
+- [row-level-security.md](Security/row-level-security.md) — Row-Level Security (RLS): per-row policies (`USING`/`WITH CHECK`), who bypasses it (superuser always, owner by default unless `FORCE`, `BYPASSRLS`), near-zero overhead on an indexed/sargable predicate vs the VOLATILE-function trap (measured), and pitfalls (superuser/owner testing, GUC leakage over pooled connections, missing `WITH CHECK`)
 - [connect-rds-postgresql-with-iam-authentication.md](Security/connect-rds-postgresql-with-iam-authentication.md) — IAM authentication to RDS, with SSL modes
 - [krb5_pac_info.md](Security/krb5_pac_info.md) / [krb5_pac_info.c](Security/krb5_pac_info.c) — Kerberos PAC info
 

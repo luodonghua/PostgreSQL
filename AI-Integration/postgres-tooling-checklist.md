@@ -1,190 +1,177 @@
-# Choosing & Operating PostgreSQL Tools (Migration, Tuning, Operation) — a Checklist
+# Integrating AI Tools with PostgreSQL — a Security & Operations Checklist
 
-The ecosystem around PostgreSQL is full of helpers: migration tools, tuning
-advisors, schema-diff utilities, and increasingly **AI/LLM agents and MCP servers**
-that connect a model directly to your database. They're useful, but each one is
-also a new way to break production. This doc is a **selection and operations
-checklist** — questions to ask *before* you adopt a tool, and guardrails to put in
-place *before* you let it touch a real database.
+More and more AI tooling now connects **directly to your database**: an **MCP
+server** that exposes tables/queries to an LLM, a **SQL-writing assistant** or
+chatbot that answers from your data, an **AIOps agent** that inspects stats and runs
+diagnostic queries. These are useful, but each one is a model issuing
+*dynamic, generated* commands against production — effectively an untrusted client
+with a direct line to your data.
 
-It's deliberately vendor-neutral: the same questions apply to a migration framework,
-a `pg_stat_statements` dashboard, or an LLM that writes SQL for you. The emphasis is
-on **operation and security**, because that's where these tools cause the most
-expensive, hardest-to-undo damage.
+This is a checklist for **what to verify before you plug such a tool in**, and what
+guardrails to put in place first. The emphasis is **security and operation**,
+because that's where an AI integration causes the most expensive, hardest-to-undo
+damage — and because the model's "judgment" is never the thing that should be
+stopping a bad action.
 
-> Why a checklist? Because the failure modes here are not exotic — they're the same
-> few mistakes (too much privilege, no timeout, no row cap, an unbounded or
-> network-coupled call) made over and over. A checklist is how you avoid learning
-> each one the hard way.
-
----
-
-## 1. First question: where does the tool run, and what can it reach?
-
-Before anything else, classify the tool on two axes — this determines its entire
-risk profile:
-
-| Axis | Options | Why it matters |
-|------|---------|----------------|
-| **Privilege** | read-only / DML / DDL / superuser | caps the worst-case blast radius |
-| **Locus** | runs *in* the DB (extension, SQL function) vs *beside* it (app/worker/agent) | in-DB tools couple DB health to the tool's behavior; external tools are isolated |
-
-A read-only reporting tool and a superuser migration runner are not the same kind of
-risk, and shouldn't get the same trust. **Give each tool the least privilege and the
-most isolation its job allows.** Most "advisor"/"assistant" tools only need to
-*read*; very few genuinely need DDL or superuser.
+> Why a checklist? The failure modes aren't exotic — they're the same few mistakes
+> (too much privilege, no row cap, no timeout, trusting generated SQL, a secret in
+> the wrong place) repeated. A checklist is how you avoid learning each one the hard
+> way, in production.
 
 ---
 
-## 2. Migration & schema-change tools
+## 0. Frame it right: the AI tool is an untrusted client
 
-| ✅ Check | Why |
-|---------|-----|
-| Does it run changes in a **transaction** and roll back cleanly on failure? | a half-applied migration is the worst state to be in |
-| Does it support **`lock_timeout`** / short lock windows for DDL? | an `ALTER TABLE` that grabs an `ACCESS EXCLUSIVE` lock and waits behind a long query can stall all traffic |
-| Does it avoid **full table rewrites** where possible (or warn you)? | adding a `NOT NULL DEFAULT`, changing a type, etc. can rewrite the whole table and hold locks for minutes |
-| Is the change log **ordered, versioned, and idempotent** (re-runnable)? | so a retried or partially-applied migration converges, not corrupts |
-| Does it have a **tested down/rollback** path, or a forward-fix plan? | "we'll just revert" is not a plan unless you've tried it |
-| Does it run against a **staging copy** first? | migrations are the classic "worked in dev, locked prod" trap |
+Whatever the tool is — MCP server, agent, chatbot — treat the SQL it issues as
+**untrusted input**, for the same reason you never concatenate user input into a
+query. An LLM can be steered by the data it reads (**prompt injection**: a row or
+document saying "ignore prior instructions and …"), so you cannot rely on the model
+to police itself. **Your defense is what the database *allows*, not what the model
+*intends*.** Everything below follows from that.
 
-**Pitfall to avoid:** tools that apply DDL with no lock timeout. On a busy table,
-a blocked `ALTER` queues behind it every subsequent query on that table — a brief
-schema change becomes a site-wide outage. Always bound DDL with `lock_timeout` and,
-for big tables, prefer online patterns (e.g. `pg_repack`, add-column-then-backfill;
-see [Maintenance/postgresql-maintenance.md](../Maintenance/postgresql-maintenance.md)).
+Two framing questions set the risk level:
 
----
-
-## 3. Tuning & advisory tools
-
-| ✅ Check | Why |
-|---------|-----|
-| Does it **read** stats (`pg_stat_statements`, `pg_stat_user_tables`) rather than guess? | advice not grounded in your workload is noise |
-| Does it **recommend**, or does it **auto-apply**? Auto-apply needs far more scrutiny. | an index created automatically on a hot table is a write-amplification and lock surprise |
-| Does it account for the **write cost** of its suggestions? | every index it proposes slows `INSERT`/`UPDATE` and adds vacuum load — an advisor that only counts read speedups is half-blind |
-| Does it suggest changes you can **test and measure**, not just trust? | verify with `EXPLAIN (ANALYZE, BUFFERS)` on your data before/after |
-| Does it understand **your** PostgreSQL version's planner/features? | advice for PG 12 can be wrong on PG 18 |
-
-**Pitfall to avoid:** blindly applying an index advisor's full list. Indexes aren't
-free — each one adds write latency, bloat, and vacuum work. Add them one at a time,
-measure, and keep only the ones that earn their keep. (Index internals and the
-read/write trade-off: [Development/Indexes/index-comparison.md](../Development/Indexes/index-comparison.md).)
+| Question | Safer answer |
+|----------|--------------|
+| **What privilege does it connect with?** | a dedicated **read-only** role, scoped to only the schemas/views it needs |
+| **Where does the model call run?** | in the **app/agent tier**, not inside the database backend |
 
 ---
 
-## 4. Operational / runtime tools (incl. AI agents & MCP servers)
+## 1. Access & privilege (the single most important control)
 
-This is where AI tooling lands: an LLM or MCP server that runs queries on your
-behalf, a chatbot answering from SQL, an agent doing "AIOps." These are powerful and
-the **highest-risk** category, because they issue *dynamic, model-generated* commands
-at runtime. Treat every one as untrusted input to your database.
+- [ ] **Dedicated least-privilege role.** The tool connects as its own role with
+  **read-only** access to **only** the objects it needs — no writes, no DDL, no
+  reach into unrelated schemas or `pg_catalog` fishing. This one control caps the
+  blast radius of a prompt-injected, buggy, or over-eager agent. Build it with
+  explicit schema `USAGE` + table/view `SELECT` grants
+  ([Security/schema-usage-privilege.md](../Security/schema-usage-privilege.md)).
+- [ ] **Expose views, not raw tables.** Point the tool at a curated `api.*` view
+  layer. A view is a controlled surface: you choose which columns are visible, can
+  omit sensitive fields, and can evolve the physical schema without changing what the
+  tool sees.
+- [ ] **Row-level isolation where tenancy matters.** If the data is multi-tenant or
+  per-user, enforce it in the database with **Row-Level Security** so a generated
+  query physically can't cross the boundary
+  ([Security/row-level-security.md](../Security/row-level-security.md)) — and run the tool as a
+  role that RLS actually applies to (not a superuser/owner/`BYPASSRLS` role).
+- [ ] **No ambient superuser.** An agent connected as a superuser ignores RLS,
+  ignores most guardrails, and can do anything. Never.
 
-### Correctness
-- **Answer only from real query results.** If the tool synthesizes an answer the SQL
-  didn't return, it will confidently hallucinate. Empty result → "nothing found,"
-  never improvisation.
-- **Stable output shape.** Downstream code integrates against the response contract
-  (text + rows + the SQL used); keep column names and ordering predictable. Expose
-  **views** with fixed shapes rather than raw tables, so you can evolve the schema
-  behind them.
+---
 
-### Performance (every tool path, no exceptions)
-- **Row caps on every query.** An assistant is not a bulk-export job; a missing
-  `LIMIT` turns one bad prompt into a million-row scan. Enforce a cap in the tool
-  layer, not just by hoping the model adds `LIMIT`.
-- **`statement_timeout` on the tool's role.** A bad or ambiguous request must become
-  a *fast failure*, not a slow resource drain. Set it on the role the tool connects
-  as, so it can't be prompted away.
-- **Index what the tools actually touch.** Vector columns need their ANN index
+## 2. Guarding dynamic, model-generated SQL
+
+If the tool runs SQL the model wrote (the whole point of a "query" MCP tool), gate
+it:
+
+- [ ] **`SELECT`-only.** Reject anything that isn't a read. Don't rely on the model
+  to "only read" — enforce it.
+- [ ] **Single statement.** Reject stacked queries (a stray `;` that smuggles in a
+  second statement). Parse/validate, don't pattern-match loosely.
+- [ ] **Block dangerous constructs:** DML/DDL keywords
+  (`INSERT/UPDATE/DELETE/DROP/ALTER/TRUNCATE/GRANT/COPY`), and calls that touch the
+  filesystem or extensions.
+- [ ] **Allow-list schemas/objects.** Only approved views/schemas may be referenced.
+- [ ] **Parameterize** any user/model-supplied values rather than string-building.
+- [ ] **Belt and braces:** the read-only role (§1) means even if validation is
+  bypassed, a write simply fails at the database. Validation is convenience and
+  clear errors; the **grant** is the real wall.
+
+---
+
+## 3. Operational safety: caps and timeouts on every path
+
+An assistant is not a bulk-export job or an analytics runner. Bound it:
+
+- [ ] **Row caps on every query/tool path.** A missing `LIMIT` turns one vague prompt
+  into a million-row scan. Enforce the cap in the tool layer — don't hope the model
+  adds `LIMIT`.
+- [ ] **`statement_timeout` on the tool's role.** A bad or ambiguous request must be
+  a *fast failure*, not a slow resource drain. Set it on the connecting role so it
+  can't be prompted away. (See long-running-query impact:
+  [RDS-PostgreSQL/simulate-long-running-query.md](../RDS-PostgreSQL/simulate-long-running-query.md).)
+- [ ] **Connection limits / pooling.** An agent that fans out parallel queries can
+  exhaust the pool and starve real traffic; cap its connections
+  ([Connection-Pooling/lock-contention-pool-exhaustion.md](../Connection-Pooling/lock-contention-pool-exhaustion.md)).
+- [ ] **Index what the tool touches.** Vector columns need their ANN index
   (HNSW/IVFFlat — [pgvector-indexes.md](pgvector-indexes.md)); queue/status tables
-  need their claim indexes ([Performance/postgresql-as-queue-table.md](../Performance/postgresql-as-queue-table.md));
-  views inherit the underlying tables' indexes.
-
-### Security (the part people skip and regret)
-- **Dedicated least-privilege role.** The tool connects as a role with **read-only**
-  access to **only** the schemas/views it needs — no writes, no DDL, no `pg_catalog`
-  spelunking into unrelated data. This single control caps the blast radius of a
-  prompt-injected or buggy tool.
-- **Validate any dynamic SQL** before executing it: `SELECT`-only, reject multiple
-  statements / stacked queries (no stray `;`), block dangerous keywords
-  (`INSERT/UPDATE/DELETE/DROP/ALTER/COPY/GRANT`), and allow only approved
-  schemas/views. **Parameterize** rather than string-concatenate user/model input.
-- **Query views (`api.*`), not raw tables.** A view is a controlled exposure surface:
-  you decide which columns leak, and you can change the physical schema without
-  changing what the tool sees.
-- **Assume prompt injection.** Content the model reads (rows, documents, user
-  messages) may contain instructions. The role's privileges — not the model's
-  "judgment" — must be what actually stops a destructive action. Defense is the
-  grant, not the prompt.
-
-### Observability (your flight recorder)
-- **Return which tool/route handled the request** so routing is debuggable.
-- **Return the exact SQL executed** for dynamic-SQL paths — every answer gets an
-  audit trail.
-- **Log each tool call:** timestamp, tool, the question, `row_count`, latency, and
-  any error text. When results "feel off," this log is how you find out why.
+  need their claim indexes
+  ([Performance/postgresql-as-queue-table.md](../Performance/postgresql-as-queue-table.md));
+  views inherit the base tables' indexes. An unindexed tool query is a scan tax on
+  the whole instance.
 
 ---
 
-## 5. Security hygiene for tools that call external APIs
+## 4. Correctness: answer only from the data
 
-If a tool (or the database itself) calls out to an external model/API, add these:
+- [ ] **Ground answers in real query results.** If the tool narrates beyond what the
+  SQL returned, it will confidently hallucinate. Empty result → "nothing found,"
+  never improvisation.
+- [ ] **Stable response contract.** Downstream code integrates against the shape
+  (answer text + rows + the SQL used); keep column names and ordering predictable —
+  another reason to serve **views** with fixed shapes.
 
-- **No hardcoded keys.** Never bake an API key into a SQL function or a committed
-  file. Load secrets from a secrets manager into the app/worker tier; rotate them
-  regularly. Session-scoped settings (`current_setting`) are fine for a local demo,
-  not for production.
-- **Control egress.** A database making outbound internet calls is an unusual and
-  risky posture — add network egress controls / allow-lists so a compromised
-  function can't exfiltrate data or reach arbitrary endpoints.
-- **Prefer calling models from the app/worker tier, not the database.** This is the
-  strong recommendation from our pipeline work
-  ([embedding-pipeline-patterns.md](embedding-pipeline-patterns.md) §0): the database
-  is precious and hard to scale; an in-backend network call couples DB health to an
-  external service's latency and failures, and holds a backend process (and possibly
-  locks) for the whole round-trip. Let the app compute vectors/answers and the
-  database **store and serve** them.
-- **On managed PostgreSQL, in-DB external calls are usually not even possible.** RDS
-  and Aurora don't allow untrusted languages (`plpython3u`) or arbitrary
+---
+
+## 5. Observability: your flight recorder
+
+When an answer "feels off," logs are how you find out why — and they're your audit
+trail for a tool that can read production data.
+
+- [ ] **Return which tool/route handled the request** (debuggable routing).
+- [ ] **Return the exact SQL executed** for dynamic-SQL paths (per-answer audit
+  trail).
+- [ ] **Log every tool call:** timestamp, tool name, the question, `row_count`,
+  latency, and any error text.
+- [ ] **Alert on the tells:** spikes in rejected-SQL, timeouts, or row-cap hits often
+  mean prompt injection or a broken agent loop.
+
+---
+
+## 6. Where the model call runs, secrets, and egress
+
+The AI model call itself (embedding, generation) raises its own hazards:
+
+- [ ] **Prefer calling the model from the app/agent tier, not inside the database.**
+  The database is precious and hard to scale; an in-backend network call couples DB
+  health to an external service's latency and failures and holds a backend process
+  (and possibly locks) for the whole round-trip. Let the agent tier call the model
+  and the database **store and serve** the results — the recommendation from our
+  pipeline work ([embedding-pipeline-patterns.md](embedding-pipeline-patterns.md) §0,
+  and the measured OLTP-stall it prevents in §4).
+- [ ] **No hardcoded keys.** Never bake an API key into a SQL function or a committed
+  file. Load secrets from a secrets manager into the agent tier and **rotate** them.
+  Session GUCs (`current_setting`) are a demo convenience, not production secret
+  storage.
+- [ ] **Control egress.** A database (or agent) making outbound internet calls needs
+  an allow-list so a compromised path can't exfiltrate data or reach arbitrary
+  endpoints.
+- [ ] **On managed PostgreSQL, in-DB external calls usually aren't even possible.**
+  RDS and Aurora don't allow untrusted languages (`plpython3u`) or arbitrary
   HTTP-from-SQL, so a raw call to a third-party API (e.g. OpenAI) from inside the DB
-  won't work there at all. The only in-database route is the provider's own
-  integration — e.g. **Aurora Machine Learning**, which exposes **Amazon Bedrock /
-  SageMaker / Comprehend** (same Region) as SQL functions — which locks you to
-  AWS-hosted models. For anything else, the call must live in the app/worker tier.
-  *(Managed-service specifics per AWS documentation; confirm against your version.)*
+  won't work there. The only in-database route is the provider's own integration —
+  e.g. **Aurora Machine Learning** exposing **Amazon Bedrock / SageMaker /
+  Comprehend** (same Region) as SQL functions — which locks you to AWS-hosted models.
+  Anything else must run in the agent/app tier. *(Per AWS docs; confirm for your
+  version.)*
 
 ---
 
-## 6. A connection to lessons already in this repo
+## One-screen checklist
 
-These checks aren't abstract — they encode failures we've reproduced and documented:
+Before you connect an MCP server / agent / AI assistant to PostgreSQL:
 
-- **"Set a `statement_timeout`"** — see long-running-query behavior in
-  [RDS-PostgreSQL/simulate-long-running-query.md](../RDS-PostgreSQL/simulate-long-running-query.md).
-- **"A slow call inside a DB transaction stalls OLTP"** — measured, with the fix, in
-  [embedding-pipeline-patterns.md](embedding-pipeline-patterns.md) §4 and
-  [Performance/postgresql-as-queue-table.md](../Performance/postgresql-as-queue-table.md) §2.
-- **"Least privilege via roles and schema `USAGE`"** —
-  [Security/schema-usage-privilege.md](../Security/schema-usage-privilege.md).
-- **"Indexes cost writes"** —
-  [Development/Indexes/index-comparison.md](../Development/Indexes/index-comparison.md).
-- **"Pool exhaustion when one tool holds connections/locks"** —
-  [Connection-Pooling/lock-contention-pool-exhaustion.md](../Connection-Pooling/lock-contention-pool-exhaustion.md).
+- [ ] Connects as a **dedicated read-only role**, scoped to approved **views** only.
+- [ ] **RLS** enforces tenant/user row isolation (and the tool's role is subject to it).
+- [ ] Generated SQL is validated: **SELECT-only, single statement, allow-listed objects, parameterized** — with the read-only grant as the real backstop.
+- [ ] **Row caps** + **`statement_timeout`** + **connection caps** on every tool path.
+- [ ] Tool queries hit **indexed** columns/views.
+- [ ] Answers come **only** from returned rows; empty means "nothing found."
+- [ ] Every call logs **tool, SQL, row_count, latency, errors**; alert on rejects/timeouts.
+- [ ] Model calls run in the **agent tier**; **no hardcoded keys** (secrets manager + rotation); **egress controlled**; on RDS/Aurora, in-DB calls limited to the provider's ML integration.
 
----
-
-## Summary — the one-screen checklist
-
-**Before adopting any PostgreSQL tool:**
-
-- [ ] What privilege does it *actually* need? Grant the least; default to read-only.
-- [ ] Does it run **in** the DB or **beside** it? Prefer beside (isolation).
-- [ ] Migration: transactional, `lock_timeout`, no surprise table rewrite, tested on staging, rollback plan.
-- [ ] Tuning: grounded in real stats, recommends (not auto-applies), accounts for write cost, measurable.
-- [ ] Operational/AI: row caps + `statement_timeout` on a dedicated **read-only role**; dynamic SQL validated (SELECT-only, single statement, approved views); query views not raw tables; assume prompt injection.
-- [ ] Observability: log tool, SQL, row_count, latency, errors — every call.
-- [ ] External calls: no hardcoded keys (use a secrets manager + rotation); control egress; **prefer the app/worker tier**; on RDS/Aurora, in-DB calls are limited to the provider's own ML integration.
-
-The through-line: **the database's own guardrails — roles, timeouts, row caps,
-views, egress controls — are what keep a tool safe, not the tool's good intentions
-or the model's judgment.**
+**The through-line:** an AI tool is an untrusted client. The database's own
+guardrails — **least-privilege roles, RLS, views, row caps, timeouts, egress
+controls** — are what keep it safe, not the tool's good intentions or the model's
+judgment.
