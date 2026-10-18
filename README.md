@@ -39,6 +39,7 @@ SQL and application-side examples for building on PostgreSQL.
 - [query-examples.md](Development/Queries/query-examples.md) — assorted query idioms with output (`format`, date parts, `NOT IN (NULL)`, three-valued logic, window functions)
 - [keyset-pagination.md](Development/Queries/keyset-pagination.md) — keyset/seek pagination with row-value comparison `(last_modified_ts, id) < (?, ?)`: why it beats `OFFSET`, tie-safety, and measured `EXPLAIN` plans
 - [autonomous-transactions.md](Development/Queries/autonomous-transactions.md) — autonomous transactions (audit-survives-rollback): the `dblink` loopback pattern, why `pg_background` isn't portable, and RDS/Aurora guidance
+- [listen-notify.md](Development/Queries/listen-notify.md) — `LISTEN`/`NOTIFY` event-driven wakeups: transactional delivery, best-effort (missed if nobody's listening), duplicate folding, 8000-byte payload limit, the worker-wakeup pattern with a poll fallback, and RDS/Aurora (incl. Serverless) caveats
 
 **Data types** ([DataTypes/](Development/DataTypes/))
 - [timestamp-with-time-zone.md](Development/DataTypes/timestamp-with-time-zone.md) — `timestamp` vs `timestamptz` behavior

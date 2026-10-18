@@ -290,6 +290,14 @@ is listening. The durable `embedding_queue` stays the source of truth; the notif
 only shortens latency. If a long-lived listener is operationally awkward, just poll
 every few seconds in small batches — simpler, and usually "real-time enough."
 
+See [Development/Queries/listen-notify.md](../Development/Queries/listen-notify.md)
+for a runnable listener/notifier demo, the transactional and best-effort semantics
+(verified), and the full worker-wakeup pattern with a poll fallback. **Managed
+note:** RDS supports `LISTEN/NOTIFY` normally; Aurora (provisioned) supports it but
+only **per-instance** (writer only, not reader endpoints, not across failover); on
+**Aurora Serverless** AWS advises against it — **poll** there. The durable queue +
+poll backstop keeps the pipeline correct regardless.
+
 ---
 
 ## 7. Don't re-embed unchanged meaning (cost + throughput)
