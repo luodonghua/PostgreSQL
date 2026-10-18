@@ -14,6 +14,7 @@ PostgreSQL.
 - [pgvector-hnsw.md](pgvector-hnsw.md) — HNSW deep dive: graph internals, `m` / `ef_construction` / `ef_search`, build & query tuning, large-scale operation ([demo-hnsw.sql](demo-hnsw.sql))
 - [pgvector-ivfflat.md](pgvector-ivfflat.md) — IVFFlat deep dive: k-means lists, `lists` / `probes`, build-after-data, measured recall, large-scale operation ([demo-ivfflat.sql](demo-ivfflat.sql))
 - [hybrid-search.md](hybrid-search.md) — combining pgvector with scalar (B-tree) filters and full-text (GIN) search; filtering-after-ANN-scan, iterative scans, partial indexes, **Reciprocal Rank Fusion (RRF)** for blending semantic + lexical relevance, and large-scale guidance
+- [embedding-pipeline-patterns.md](embedding-pipeline-patterns.md) — **production-grade** async embedding pipeline: two-speeds-of-truth, triggers-enqueue-not-embed, a multi-entity job queue + batched concurrent worker, pipeline-level retry (`next_run_at` + backoff), change detection (sha256) + cascade re-embedding, `LISTEN/NOTIFY` vs micro-batching, a query-embedding cache with TTL, and model versioning for semantic drift (verified on PG 18.6)
 
 <!--
 Planned / future topics:
