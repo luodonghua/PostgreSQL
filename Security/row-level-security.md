@@ -73,8 +73,8 @@ privileges *and* must satisfy the policy. No `SELECT` grant → no access, polic
 not.
 
 > **For multi-tenancy, pin the tenant with a session GUC** instead of `current_user`
-> (one DB role, many tenants): the app runs `SET app.tenant_id = '…'` per connection,
-> and the policy reads it:
+> (one DB role, many tenants): the app sets `app.tenant_id` per request and the
+> policy reads it:
 > ```sql
 > CREATE POLICY tenant_iso ON events
 >     USING (tenant_id = current_setting('app.tenant_id')::int);
@@ -198,12 +198,36 @@ immediately:
    report. Test as the real app role.
 2. **Forgetting `FORCE` when the app connects as the table owner.** Owner bypasses by
    default; your policies silently do nothing.
-3. **GUC leakage across a connection pool.** If the policy reads
-   `current_setting('app.tenant_id')` and you set it with plain `SET`, a pooled
-   connection can retain the *previous* request's tenant and serve cross-tenant data.
-   Use **`SET LOCAL`** inside each request's transaction (reset at commit), or
-   `set_config(..., true)`. This is a correctness-*and*-security bug, not a
-   performance one.
+3. **GUC leakage across a connection pool — always use `SET LOCAL`, never plain
+   `SET`.** This is the rule, stated plainly: if your policy reads
+   `current_setting('app.tenant_id')`, set that value with **`SET LOCAL`** (or
+   `set_config('app.tenant_id', …, true)`) inside each request's transaction —
+   **not** session-level `SET`.
+
+   Why it matters: a pooled connection is reused across many tenants. Plain `SET`
+   persists for the whole *database session* (the physical connection), so it
+   survives the request and leaks into whoever grabs that connection next — RLS then
+   serves the **previous tenant's rows** to the new one. `SET LOCAL` is scoped to the
+   transaction and PostgreSQL **auto-resets it at COMMIT/ROLLBACK**, so the
+   connection always returns to the pool clean. Verified on PG 18.6: after
+   `BEGIN; SET app.tenant_id='A'; COMMIT`, the *next* transaction in the same session
+   still read `A` (the leak); with `SET LOCAL` the value was gone the moment the
+   transaction ended.
+
+   Practical pattern — one transaction per request:
+   ```sql
+   BEGIN;
+   SET LOCAL app.tenant_id = '42';   -- or: SELECT set_config('app.tenant_id','42',true);
+   -- ... queries; RLS now filters to tenant 42 ...
+   COMMIT;                            -- app.tenant_id auto-resets here
+   ```
+   `SET LOCAL` only works inside a transaction (outside one it's a no-op with a
+   warning) — which is fine, since wrapping each request in a transaction is exactly
+   the discipline that makes this safe. Session-level `SET` is acceptable **only** on
+   a dedicated, non-pooled connection; on any pool, treat plain `SET` for tenant
+   context as a correctness-*and*-security bug. The safest rule is to never use
+   session `SET` for tenant context at all, so there is no stale session value to
+   leak.
 4. **`WITH CHECK` omitted on writes.** With only `USING`, an `UPDATE` can move a row
    *out* of your visibility (e.g. change its `tenant_id`), or an `INSERT` can create
    rows you then can't see. Add `WITH CHECK` (often identical to `USING`) to pin
