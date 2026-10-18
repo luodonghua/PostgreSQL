@@ -21,9 +21,64 @@ used throughout — a `documents` table embedded into `doc_embeddings` via an
 
 The pipeline *mechanics* below were verified on **PostgreSQL 18.6 + pgvector 0.8.7**
 using the real `vector` type. The external model call is written as
-`embed(text) → vector` and left as a placeholder: substitute a hosted API or a local
-model ([local-embeddings-minilm.md](local-embeddings-minilm.md)). The hosted-API
-request/response shapes referenced here come from each provider's public docs.
+`embed(text) → vector` throughout — see the next section for exactly what that is
+and how to supply it.
+
+---
+
+## 0. What `embed(text)` is — the actual model call
+
+Every code block below calls `embed(some_text)::vector(384)`. That is the **one
+place the real embedding model is invoked** — everything else in this doc is the
+plumbing around it. `embed` is not built in; you provide it, in one of two shapes:
+
+**Option A — do the model call in your application/worker code (recommended).** The
+SQL worker is driven from Python/Go/etc.; that code calls the model and passes the
+vector back. This is the pattern in our scripts
+([generate_embeddings_with_retries.py](generate_embeddings_with_retries.py)) — the
+"`embed()`" in the SQL worker below is pseudocode standing in for "the vector your
+application already computed." With a **local** model
+([local-embeddings-minilm.md](local-embeddings-minilm.md)):
+
+```python
+from sentence_transformers import SentenceTransformer
+model = SentenceTransformer("all-MiniLM-L6-v2")        # 384-dim
+def embed(text: str) -> list[float]:
+    return model.encode(text, normalize_embeddings=True).tolist()
+# the worker then inserts the returned list as a vector(384) literal
+```
+
+**Option B — call the model from inside the database** via a PL/Python function, so
+plain SQL can use `embed(text)`. This keeps the examples copy-paste runnable but
+couples the DB to an external call (and needs the untrusted `plpython3u` language,
+which **managed services like RDS/Aurora do not allow** — there, use Option A):
+
+```sql
+-- hosted API example (OpenAI-shaped; needs plpython3u + an API key in settings)
+CREATE OR REPLACE FUNCTION embed(input_text text) RETURNS vector
+LANGUAGE plpython3u AS $$
+    import json, urllib.request
+    key = plpy.execute("SELECT current_setting('app.openai_key', true) AS k")[0]["k"]
+    req = urllib.request.Request(
+        "https://api.openai.com/v1/embeddings",
+        data=json.dumps({"model": "text-embedding-3-small", "input": input_text}).encode(),
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        vec = json.loads(r.read())["data"][0]["embedding"]
+    return "[" + ",".join(map(str, vec)) + "]"       -- pgvector text literal
+$$;
+```
+
+> **Dimension must match your model.** This doc uses `vector(384)` (MiniLM). OpenAI
+> `text-embedding-3-small` is 1536, Titan v2 is 1024 — change every `vector(N)` to
+> your model's output size (see
+> [pgvector-indexes.md](pgvector-indexes.md) §3). In testing here, `embed()` was a
+> local function returning a real `vector(384)`; the hosted-API body above is from
+> the provider's public docs and not executed in this repo.
+
+For the rest of the doc, read `embed(text)::vector(384)` as "call your model (Option
+A or B) and get back the row's vector." The pipeline around it is identical either
+way.
 
 ---
 
@@ -177,7 +232,8 @@ BEGIN
         BEGIN
             SELECT body INTO v_text FROM documents WHERE id = r.document_id;
 
-            v_vec := embed(v_text)::vector(384);   -- the slow external call (placeholder)
+            v_vec := embed(v_text)::vector(384);   -- the slow model call (the real
+                                                   -- embedding — see §0)
 
             INSERT INTO doc_embeddings (document_id, embedding)
             VALUES (r.document_id, v_vec)
@@ -458,7 +514,8 @@ BEGIN
         RETURN v_vec;
     END IF;
 
-    v_vec := embed(p_query)::vector(384);              -- miss: compute once
+    v_vec := embed(p_query)::vector(384);   -- cache miss: call the model (the real
+                                            -- embedding call — see §0), then store it
     INSERT INTO query_embedding_cache (query_text, model_id, embedding)
     VALUES (p_query, p_model, v_vec)
     ON CONFLICT (query_text, model_id) DO UPDATE
