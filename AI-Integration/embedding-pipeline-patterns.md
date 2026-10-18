@@ -127,15 +127,23 @@ embeds the document's *current* committed text, never the superseded v2…v5. Th
 coalesced job means "embed whatever this document looks like now" — which is exactly
 what you want. So a burst of edits costs **one** embedding, not one per edit.
 
-> **One honest edge case.** If a worker has already *claimed* a document and is
-> mid-embed (model call in flight) when a new update lands, the new update
-> re-stamps the queue row — but the worker will `DELETE` that row on success,
-> potentially discarding the re-enqueue, leaving the vector one version behind until
-> the next edit. In practice this window is small and the content-hash guard (§7)
-> plus the next edit heal it; if you need strictness, switch the worker to
-> UPDATE-to-processing (mark `running`, re-check/re-queue if the row changed during
-> processing) per
-> [postgresql-as-queue-table.md](../Performance/postgresql-as-queue-table.md) §3.
+> **Edge case: an update arrives while a worker is mid-embed.** This is safe, and
+> the reason is lock ordering (verified on PG 18.6). The §4 worker claims the queue
+> row with `SELECT … FOR UPDATE` and holds that lock across the slow `embed()` — it
+> does **not** delete the row until the end. So when the new update's trigger runs
+> `INSERT … ON CONFLICT (document_id) DO UPDATE`, it finds the row **locked** and
+> **blocks**. When the worker commits (vector of the old text persisted, row
+> deleted), the enqueue unblocks, re-evaluates, sees the row **gone**, and takes the
+> plain-`INSERT` path — leaving a **fresh pending job**. Net: the vector is briefly
+> one version behind, but a pending job for the new text always exists, so the next
+> worker pass re-embeds it. **No intent is lost.**
+>
+> (What would lose intent is deleting the claimed row in a *separate committed
+> transaction* before embedding, so a new enqueue could slip in and then be
+> deleted — our single-transaction worker never does this. If you need the vector
+> to never lag even briefly, use UPDATE-to-processing with a changed-during-run
+> re-check, per
+> [postgresql-as-queue-table.md](../Performance/postgresql-as-queue-table.md) §3.)
 
 ---
 
