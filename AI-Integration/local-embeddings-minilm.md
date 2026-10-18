@@ -59,6 +59,53 @@ print(len(vec))        # 384
 `normalize_embeddings=True` makes the vectors unit-length, so **cosine** distance
 (pgvector's `<=>`) is the right metric and `1 - (a <=> b)` is cosine similarity.
 
+### 3.1 Smoke test — confirm the model works (the local equivalent of the API `curl`)
+
+If you'd call a hosted model like this to check it responds:
+
+```bash
+curl https://api.openai.com/v1/embeddings \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "text-embedding-3-small",
+       "input": "Here is the text I want to turn into an embedding."}'
+```
+
+the **local** equivalent needs no API key, no network (after the one-time model
+download), and no server — it's a single Python call:
+
+```bash
+cd AI-Integration && . .venv/bin/activate
+python -c "from sentence_transformers import SentenceTransformer; \
+m = SentenceTransformer('all-MiniLM-L6-v2'); \
+v = m.encode('Here is the text I want to turn into an embedding.', normalize_embeddings=True); \
+import numpy as np; \
+print('dim:', len(v)); \
+print('first 5:', [round(float(x), 6) for x in v[:5]]); \
+print('norm:', round(float(np.linalg.norm(v)), 6))"
+```
+
+**Expected output** — compare yours against this to confirm your setup matches
+(same model version, `all-MiniLM-L6-v2`, CPU):
+
+```
+dim: 384
+first 5: [-0.001605, 0.059164, 0.001904, -0.005965, 0.021069]
+norm: 1.0
+```
+
+- **`dim: 384`** — MiniLM always emits 384 floats, regardless of input length.
+- **`norm: 1.0`** — `normalize_embeddings=True` made it unit-length (required for
+  cosine).
+- **`first 5`** — these exact values should match to ~6 decimals on any machine
+  running the same model weights. Tiny differences in the last digits can occur
+  across CPU/BLAS/PyTorch builds, but the leading digits should agree; wildly
+  different numbers mean a different model or a non-normalized vector.
+
+(The first run prints Hugging Face download/`Loading weights` progress to stderr —
+that's normal; the three lines above go to stdout. Redirect with `2>/dev/null` to
+hide it.)
+
 ---
 
 ## 4. Store and query in pgvector

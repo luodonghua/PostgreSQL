@@ -361,11 +361,30 @@ loop:
   commit
 ```
 
+The `delete`, the model call, and the `upsert` are **one transaction** that
+commits at the end. This is what makes the worker crash-safe: if it dies before
+`commit`, the `DELETE` rolls back and the queue row **reappears** for another
+worker — no work is lost. The only cost of a crash is that the model call may have
+already run, so the document gets embedded **again** on retry; that's wasted
+compute, not lost data, and it's harmless because the `UPSERT` is keyed by
+`document_id` (idempotent). ("Outside any OLTP txn" means the slow call is not
+inside the *OLTP writer's* transaction from the trigger/enqueue path above — it's
+in the worker's own transaction, which holds no OLTP row locks.)
+
 **Transactional guarantees you keep:** the enqueue is part of the OLTP
 transaction, so if that transaction rolls back, the row is *not* queued — the
 queue never references uncommitted work. The embedding is **eventually
 consistent**: there's a short window where the row is updated but its vector is
 stale/absent, which is virtually always acceptable for semantic search.
+
+> This is just one use of a PostgreSQL **queue table**. For the general pattern —
+> `FOR UPDATE SKIP LOCKED` internals, **DELETE-on-claim vs UPDATE-to-processing**
+> (reaper, retries, dead-lettering), the pros/cons of each, and when to choose
+> which — see
+> [**Performance/postgresql-as-queue-table.md**](../Performance/postgresql-as-queue-table.md).
+> (The `DELETE`-on-claim shown here is the right fit for *this* queue: the whole
+> claim→embed→upsert is one transaction, so a crashed worker's rows simply reappear
+> — and a re-embed is harmless because the `UPSERT` is keyed by `document_id`.)
 
 ### Lower-latency signal: `LISTEN`/`NOTIFY`
 
@@ -408,6 +427,146 @@ fresher vectors sooner and smoother retries but more overhead. **Start around 10
 rows/batch with a few parallel `SKIP LOCKED` workers**, and respect the provider's
 max inputs/tokens per request. Per-row embedding is only reasonable for real-time
 single-item needs (e.g. embedding a user's search query) or very low volume.
+
+### "Batch processing" ≠ "batch embedding" — a common trap
+
+These two are different axes, and only one of them saves API round-trips. It's
+easy to think you're batching when you aren't:
+
+| Axis | What it controls | Batched here? |
+|------|------------------|---------------|
+| **Batch *processing*** — e.g. `SELECT … LIMIT N` claimed/processed per run | *how many rows* you attempt per invocation | often **no** API batching |
+| **Batch *embedding*** — one model/API call carrying many texts | *how many texts* ride in a single call | **yes** — this is the win |
+
+A very common pattern (seen in many tutorials) looks like bulk work but isn't:
+
+```sql
+-- "bulk" INSERT … SELECT: ONE SQL statement, but openai_embed() is a SCALAR
+-- function invoked ONCE PER ROW → 100 rows = 100 separate API requests.
+INSERT INTO product_embedding (product_id, embedding)
+SELECT c.id, api.openai_embed(c.label || ' ' || c.description)::vector(1536)
+FROM product.category c
+ON CONFLICT (product_id) DO UPDATE SET embedding = EXCLUDED.embedding;
+```
+
+…and the same is true of a `FOR r IN SELECT … LIMIT batch_size LOOP … 
+api.openai_embed(r.text) … END LOOP`: the `LIMIT` bounds *rows per run* (batch
+*processing*), but `openai_embed` is still called once per row inside the loop —
+`batch_size` API calls, made sequentially. That's **bulk DML / chunked work, not a
+batched embedding call.** It's resumable and simple, but on the expensive axis
+(number of API round-trips) it's identical to embedding one row at a time.
+
+**True batch embedding** gathers the N texts into an array, makes **one** call,
+gets N vectors back, then does one multi-row write:
+
+```sql
+-- requires an ARRAY-accepting embed function: text[] -> vector[]  (ONE request)
+WITH batch AS (
+  SELECT array_agg(c.id ORDER BY c.id)                                   AS ids,
+         array_agg(c.label || ' ' || c.description ORDER BY c.id)        AS texts
+  FROM product.category c
+  LEFT JOIN product_embedding e ON e.product_id = c.id
+  WHERE e.product_id IS NULL
+), embedded AS (
+  SELECT unnest(b.ids) AS product_id,
+         unnest(api.openai_embed_many(b.texts)) AS embedding   -- 1 API call for all texts
+  FROM batch b
+)
+INSERT INTO product_embedding (product_id, embedding)
+SELECT product_id, embedding FROM embedded
+ON CONFLICT (product_id) DO UPDATE SET embedding = EXCLUDED.embedding;
+```
+
+The difference is one HTTP request vs. N. For a local model it's the same idea —
+`model.encode([t1..tN])` runs one batched forward pass instead of N.
+
+> `openai_embed_many(text[])` must return a **`vector[]`** (an array whose
+> *elements* are each a `vector(1536)`), so `unnest(...)` yields one `vector` per
+> input row, paired with `unnest(ids)` by position. Keep the two `array_agg`s under
+> the **same `ORDER BY`** so ids and texts (and thus the returned vectors) stay
+> aligned. Real APIs cap inputs/tokens per request (OpenAI allows up to 2048
+> inputs with a per-request token ceiling), so size the batch within that limit —
+> or split a large claim into a few array-calls.
+
+**Measured locally** (MiniLM, CPU, 200 rows) — per-row loop vs. one batched
+`encode`, producing *identical* vectors:
+
+```
+rows                : 200
+per-row (200 calls) : 1.734s   (115 rows/s)
+batched (1 call)    : 0.381s   (524 rows/s)
+speedup             : 4.5x
+identical vectors   : True
+```
+
+Runnable demo:
+[`generate_embeddings_batched.py`](../AI-Integration/generate_embeddings_batched.py)
+times both paths and stores the batched result in one multi-row `UPSERT`. (Speedup
+varies ~4–6× on CPU by machine; against a hosted API the win is even larger because
+you collapse N network round-trips into one.)
+
+### Provider specifics: how many texts per call? (OpenAI vs. Amazon Bedrock Titan)
+
+The "put N texts in one request" advice assumes the API **accepts an array** — and
+not every one does. This directly changes how you pick a batch size.
+
+- **OpenAI** (`text-embedding-3-*`): `input` accepts an **array** (up to **2,048**
+  elements, subject to a per-request token ceiling). So a real batch call carries
+  many texts → fewer requests. Pick `batch_size` as the largest array that stays
+  under both the 2,048-input and token limits.
+
+- **Amazon Bedrock Titan** (`amazon.titan-embed-text-v2:0`): real-time
+  `InvokeModel` takes a **single** `inputText` string (up to **8,192 tokens /
+  50,000 characters**), **not an array** — one call embeds **one** document (output
+  1,024 dims; v1 is 1,536). Crucially, Bedrock embedding models are throttled by
+  **Requests Per Minute (RPM), not tokens.** So you **cannot** array-batch Titan
+  real-time the way you batch OpenAI, and the lever that matters is **request
+  count**, which maps to **concurrency**, not array size.
+
+**What "batching" means for Titan, then:**
+
+1. **Real-time + bounded concurrency (online indexing).** Since one call = one
+   text, run a **pool of W concurrent `InvokeModel` calls** and size `W` to your
+   RPM quota, not to an array length. Rough mental model:
+
+   ```
+   sustainable rows/min ≈ account RPM quota for the model
+   workers W           ≈ RPM_quota / 60 × avg_call_seconds      (Little's law)
+   ```
+
+   e.g. a 2,000 RPM quota and ~0.3 s/call → keep ≈ `2000/60 × 0.3 ≈ 10` calls in
+   flight to saturate the quota without throttling. Your DB-side "batch" (the
+   `SKIP LOCKED` claim of N rows) still applies — claim N, fan those N out across
+   the W workers, collect the vectors, do **one** multi-row `UPSERT`. The array
+   step is on the *database* side; the *model* side is still one-text-per-call,
+   parallelized.
+
+2. **Bedrock batch inference (bulk one-time indexing).** For embedding a whole
+   corpus, use **asynchronous batch inference jobs**: upload inputs to S3, Bedrock
+   writes vectors back to S3, then you bulk-load them. This is the true "bulk" path
+   for Titan — far higher throughput and cheaper per record, but **asynchronous**
+   (minutes–hours), so it's for backfills, not the live queue.
+
+**Picking a default more wisely:**
+
+| Provider | Per-call input | Throttle | Batch lever | Sensible default |
+|----------|----------------|----------|-------------|------------------|
+| OpenAI `text-embedding-3-*` | array, ≤2,048 texts | tokens + requests | **array size** | ~100–512 texts/request under the token cap |
+| Bedrock Titan v2 (real-time) | **1 text**, ≤8,192 tok | **RPM** | **concurrency W** | claim ~100 rows, fan out across `W ≈ RPM/60 × call_sec` workers |
+| Bedrock Titan (batch job) | S3 file of many | job-level | whole-file | thousands+, async backfill |
+
+So a single "`batch_size = 100`" default is right for *claiming rows* on both, but
+for the *model call* it means "100 texts in one request" on OpenAI and "100 texts
+spread across a concurrency pool of one-text calls" on Titan. Setting Titan's
+batch size as if it array-batches (or cranking it to reduce "requests") won't
+help — each text is still its own request; only concurrency moves the needle, and
+only up to your RPM quota.
+
+> Not verified against a live Bedrock endpoint here — limits (8,192 tokens /
+> 50,000 chars, 1,024-dim v2, RPM throttling, single `inputText`, no array input)
+> are from the [Titan Text Embeddings docs](https://docs.aws.amazon.com/bedrock/latest/userguide/titan-embedding-models.html);
+> confirm your account's current RPM quota in the Bedrock console before sizing a
+> worker pool.
 
 ### If you truly need read-after-write consistency
 

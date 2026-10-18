@@ -19,6 +19,7 @@ Query planning and data-type choices that affect performance.
 
 - [join-strategy-and-order.sql](Performance/join-strategy-and-order.sql) — how the planner chooses joins
 - [use-right-data-type.md](Performance/use-right-data-type.md) — impact of data-type selection on storage and query performance
+- [postgresql-as-queue-table.md](Performance/postgresql-as-queue-table.md) — PostgreSQL as a work queue with `FOR UPDATE SKIP LOCKED`: DELETE-on-claim vs UPDATE-to-processing (reaper, retries, dead-letter), their pros/cons, and when to choose each (verified concurrency tests)
 
 ### Maintenance
 How PostgreSQL keeps tables healthy, explained from the source with animations.
