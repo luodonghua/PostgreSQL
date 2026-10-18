@@ -505,6 +505,41 @@ times both paths and stores the batched result in one multi-row `UPSERT`. (Speed
 varies ~4–6× on CPU by machine; against a hosted API the win is even larger because
 you collapse N network round-trips into one.)
 
+### When per-row-in-a-loop is a legitimate choice
+
+Per-row embedding inside a chunked loop (one API call per row, `LIMIT N` rows per
+run) isn't *wrong* — it's a deliberate trade-off that's reasonable for small/
+moderate tables and textbook-clarity. Its genuine advantages:
+
+- **Simplicity** — a scalar `embed(text)` call per row, no array marshalling.
+- **Per-row failure isolation** — with an `EXCEPTION` handler per row, one bad
+  input (over-length, malformed) fails *that* row only; the rest succeed. With
+  naive array batching, a provider that validates atomically can reject the
+  **whole** request, so one poison input fails all N.
+
+Two things often *miscredited* to per-row, though:
+
+- **"Easy to resume"** is a property of the idempotent
+  `LEFT JOIN … WHERE embedding IS NULL` + `ON CONFLICT` design — **array batching
+  with the same filter is equally resumable.** It's not a per-row advantage.
+- **The poison-input risk is mitigable**, not inherent: pre-validate/trim inputs
+  to the token limit before sending, and on a batch rejection **bisect** (split in
+  half, retry each) to isolate the bad row in `O(log N)` extra calls — you still
+  beat per-row by a wide margin. OpenAI in particular embeds all valid inputs
+  rather than failing the whole array for most content issues.
+
+The cost that **dominates at scale** is the one easy to under-weight: **request
+count.** Hosted APIs throttle on *requests* (RPM), so 10,000 rows = 10,000 requests
+per-row vs. a handful batched — hitting rate caps ~100× sooner and spending the run
+on backoff. Even ignoring limits, remote round-trips (~50–200 ms each) paid N times
+instead of once typically make per-row **10–50× slower** end-to-end; the local demo
+above shows ~4–6× with *no* network at all.
+
+**Rule of thumb:** per-row-in-a-loop for small tables, one-off scripts, or when
+per-row isolation genuinely matters; **batched (array call + bisect-on-failure)**
+once you're embedding tens of thousands of rows or care about backfill wall-clock
+and rate limits.
+
 ### Provider specifics: how many texts per call? (OpenAI vs. Amazon Bedrock Titan)
 
 The "put N texts in one request" advice assumes the API **accepts an array** — and
