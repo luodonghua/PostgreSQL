@@ -16,9 +16,19 @@ production: **multi-entity jobs, pipeline-level retry with scheduled backoff,
 change detection (hashing), cascade re-embedding, a query-embedding cache, and
 model versioning.**
 
-All SQL verified on **PostgreSQL 18.6** (+ `pgcrypto`). The embedding call itself
-(`api.openai_embed(...)`) is shown as a placeholder — substitute your provider or a
-local model (see [local-embeddings-minilm.md](local-embeddings-minilm.md)).
+**What was verified, and how.** The pipeline mechanics were tested **end-to-end on
+PostgreSQL 18.6 with pgvector 0.8.7 + pgcrypto** using the real `vector(1536)` type
+and the actual DDL/casts below: the `embedding_job` queue, the `FOR UPDATE SKIP
+LOCKED` runnable-claim, the idempotent `ON CONFLICT` upsert, the SQL
+exponential-backoff expression, and change detection (a run that re-enqueued
+unchanged rows **skipped** embedding via the hash match, and changing one row's
+meaning re-embedded **only** that row). The one piece **not** executed as-is is the
+external model call — `api.openai_embed(...)` is a **placeholder**: in the tests it
+was substituted with a local function returning a real `vector(1536)` (and you can
+wire a local model per [local-embeddings-minilm.md](local-embeddings-minilm.md)).
+The OpenAI/provider request shape and the 1536-dim output are **based on the
+providers' public documentation** and should work as written once you supply a real
+`api.openai_embed` — see the commented note where it first appears.
 
 ---
 
@@ -175,6 +185,11 @@ BEGIN
                   JOIN product.category c ON c.id = p.category_id
                  WHERE p.id = v_job.entity_id;
 
+                -- api.openai_embed(...) is the PROVIDER CALL — a placeholder here.
+                -- NOT executed as-is in testing; its request shape and 1536-dim
+                -- output are per OpenAI's public docs and should work once you
+                -- supply it. Tests substituted a local function returning a real
+                -- vector(1536). For a local model, see local-embeddings-minilm.md.
                 v_vec := api.openai_embed(v_text)::public.vector(1536);
                 INSERT INTO embeddings.product_embedding (product_id, embedding)
                 VALUES (v_job.entity_id, v_vec)
@@ -485,5 +500,7 @@ transactional enqueue, batching, data modeling —
 ---
 
 *Pattern inspiration: "Production-Ready AI Embedding Pipeline Patterns," Vibhor
-Kumar, *AI-Ready PostgreSQL 18*. SQL adapted to this repo's conventions and verified
-on PostgreSQL 18.6.*
+Kumar, *AI-Ready PostgreSQL 18*. SQL adapted to this repo's conventions. Pipeline
+mechanics verified end-to-end on PostgreSQL 18.6 + pgvector 0.8.7 with the real
+`vector(1536)` type (a local function stood in for `api.openai_embed`, whose
+request/response shape is per the provider's public docs).*
