@@ -15,6 +15,7 @@ PostgreSQL.
 - [pgvector-ivfflat.md](pgvector-ivfflat.md) — IVFFlat deep dive: k-means lists, `lists` / `probes`, build-after-data, measured recall, large-scale operation ([demo-ivfflat.sql](demo-ivfflat.sql))
 - [hybrid-search.md](hybrid-search.md) — combining pgvector with scalar (B-tree) filters and full-text (GIN) search; filtering-after-ANN-scan, iterative scans, partial indexes, **Reciprocal Rank Fusion (RRF)** for blending semantic + lexical relevance, and large-scale guidance
 - [embedding-pipeline-patterns.md](embedding-pipeline-patterns.md) — **production-grade** async embedding pipeline built on our `documents` → `embedding_queue` → `doc_embeddings` flow: two clocks (transactional vs semantic), enqueue-don't-embed, a worker with scheduled retry (`attempts`/`next_run_at`/backoff) over `FOR UPDATE SKIP LOCKED`, content-hash skip of unchanged re-embeds, re-enqueue on referenced-row change, `LISTEN/NOTIFY` vs polling, a `(query_text, model_id)` query cache with TTL, and `model_id` versioning (verified on PG 18.6 + pgvector 0.8.7)
+- [postgres-tooling-checklist.md](postgres-tooling-checklist.md) — a vendor-neutral checklist for **choosing & operating** PostgreSQL tools (migration, tuning, operational/AI & MCP): privilege + locus classification, least-privilege read-only roles, row caps + `statement_timeout`, dynamic-SQL validation, query-views-not-tables, prompt-injection defense, observability logging, and external-API/secrets/egress hygiene (incl. why in-DB model calls are limited on RDS/Aurora)
 
 <!--
 Planned / future topics:
