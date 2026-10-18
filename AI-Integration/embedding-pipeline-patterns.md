@@ -1,506 +1,404 @@
 # Production-Grade Embedding Pipeline Patterns
 
-Generating one embedding is easy. Running embedding generation as a **system** —
-that stays fresh, survives API failures, doesn't hold OLTP hostage, controls cost,
-and survives a model upgrade — is the real work. This doc is a learning walkthrough
-of that production shape, building on two foundations already in this repo:
+Earlier docs in this repo built the pieces of an embedding system:
 
-- the **generic queue mechanics** (`FOR UPDATE SKIP LOCKED`, DELETE-vs-UPDATE
-  claim, reaper, dead-letter) in
-  [Performance/postgresql-as-queue-table.md](../Performance/postgresql-as-queue-table.md);
-- the **transactional-enqueue / async-embed** principle and batching in
-  [pgvector-indexes.md](pgvector-indexes.md) §4.
+- [pgvector-indexes.md](pgvector-indexes.md) §4 — keep OLTP fast by having a trigger
+  enqueue a marker and a worker embed asynchronously (our `documents` →
+  `embedding_queue` → `doc_embeddings` flow), plus batching.
+- [Performance/postgresql-as-queue-table.md](../Performance/postgresql-as-queue-table.md)
+  — the queue mechanics: `FOR UPDATE SKIP LOCKED`, DELETE-on-claim vs
+  UPDATE-to-processing, reaper, dead-letter.
+- [generate_embeddings_with_retries.py](generate_embeddings_with_retries.py) /
+  [generate_embeddings_batched.py](generate_embeddings_batched.py) — retry/backoff
+  and true batch embedding, measured.
 
-Here we assemble those into a full pipeline and add the pieces that only matter in
-production: **multi-entity jobs, pipeline-level retry with scheduled backoff,
-change detection (hashing), cascade re-embedding, a query-embedding cache, and
-model versioning.**
+This doc joins those into one operational picture and adds the few things that only
+bite once the system is live: **not re-embedding when meaning didn't change**,
+**keeping derived embeddings fresh when a referenced row changes**, **caching query
+embeddings**, and **surviving a model change**. We continue with the same schema we
+used throughout — a `documents` table embedded into `doc_embeddings` via an
+`embedding_queue` — rather than inventing new entities.
 
-**What was verified, and how.** The pipeline mechanics were tested **end-to-end on
-PostgreSQL 18.6 with pgvector 0.8.7 + pgcrypto** using the real `vector(1536)` type
-and the actual DDL/casts below: the `embedding_job` queue, the `FOR UPDATE SKIP
-LOCKED` runnable-claim, the idempotent `ON CONFLICT` upsert, the SQL
-exponential-backoff expression, and change detection (a run that re-enqueued
-unchanged rows **skipped** embedding via the hash match, and changing one row's
-meaning re-embedded **only** that row). The one piece **not** executed as-is is the
-external model call — `api.openai_embed(...)` is a **placeholder**: in the tests it
-was substituted with a local function returning a real `vector(1536)` (and you can
-wire a local model per [local-embeddings-minilm.md](local-embeddings-minilm.md)).
-The OpenAI/provider request shape and the 1536-dim output are **based on the
-providers' public documentation** and should work as written once you supply a real
-`api.openai_embed` — see the commented note where it first appears.
+The pipeline *mechanics* below were verified on **PostgreSQL 18.6 + pgvector 0.8.7**
+using the real `vector` type. The external model call is written as
+`embed(text) → vector` and left as a placeholder: substitute a hosted API or a local
+model ([local-embeddings-minilm.md](local-embeddings-minilm.md)). The hosted-API
+request/response shapes referenced here come from each provider's public docs.
 
 ---
 
-## 1. Two speeds of truth
+## 1. The core tension (recap) and why a pipeline
 
-The mental model the whole design rests on. A production system has two layers that
-update at different speeds:
+An embedding is produced by an external (often networked) model. Two facts collide:
 
-| Layer | Example data | Correctness requirement |
-|-------|--------------|-------------------------|
-| **Operational truth** (fast, exact) | product, price, inventory, category | must be correct **immediately** — if it lies, money breaks |
-| **Semantic truth** (meaningful, eventual) | product/brand/category vectors, query vectors | must be correct **eventually** (ideally soon) — may lag without blocking OLTP |
+- The source row must commit **fast** — users are waiting, locks are held.
+- The model call is **slow and failure-prone** — tens-to-hundreds of ms, rate
+  limits, 5xx, timeouts.
 
-Force semantic truth to behave like operational truth and you pay with **latency
-and fragility** (an API call in the write path). Treat it as an afterthought and
-you pay with **drift** — nothing crashes, but search quality quietly rots. The
-pipeline balances the two: operational writes stay fast and deterministic; semantic
-updates follow quickly, reliably, and recoverably.
+Putting the model call in the writing transaction (inline, or in a trigger) ties
+commit latency to model latency and holds row locks across a network round-trip —
+the anti-pattern established in [pgvector-indexes.md](pgvector-indexes.md) §4. The
+fix is a **pipeline**: the write records *intent* durably and returns; a separate
+worker does the slow work and can retry without touching OLTP.
 
----
+A useful way to hold this in your head: the database has **two clocks**.
 
-## 2. Three patterns (pick a gear)
+| Clock | Data | Must be correct… |
+|-------|------|------------------|
+| Transactional | the `documents` row, prices, inventory | **now** — if it's wrong, the business is wrong |
+| Semantic | the vector in `doc_embeddings` | **soon** — a brief lag is fine; forcing it to be instant costs you latency and fragility |
 
-| Gear | Pattern | When | Risk |
-|------|---------|------|------|
-| 1 | **Synchronous** (embed at write time) | low volume, strict freshness, *local* low-latency model | API latency slows/blocks writes; an embedding failure fails the write |
-| 2 | **Asynchronous** (enqueue + background worker) | **default for production**, high write volume | eventual consistency (brief "no vector yet" window) |
-| 3 | **Near-real-time** (async + event-driven wakeups) | user-facing search where new content must appear fast | `LISTEN/NOTIFY` adds operational fragility |
-
-Synchronous is for demos. **Asynchronous is the recommended production default**;
-converting it to near-real-time later is a small change (§8). Everything below
-builds the async pipeline.
+The whole design keeps the transactional clock fast and lets the semantic clock
+catch up reliably.
 
 ---
 
-## 3. Principle 1 — triggers enqueue, never embed
+## 2. Where to put the embedding call — three options
 
-Embedding inside a trigger is a self-inflicted outage: the trigger runs **inside
-the writing transaction**, which can't commit until the trigger returns — so a slow
-or failing model call stalls (or aborts) the OLTP write and holds its locks. (This
-is the inline anti-pattern from [pgvector-indexes.md](pgvector-indexes.md) §4,
-stated as a hard rule.)
+| Option | Embed happens | Use when | Cost |
+|--------|---------------|----------|------|
+| **Inline / synchronous** | inside the write txn | tiny volume, a *local* fast model, you need read-after-write | slow writes; a model outage blocks writes |
+| **Async (polled worker)** | later, worker polls the queue | **default** for real volume | eventual consistency (short "no vector yet" gap) |
+| **Async + notify** | immediately on a `NOTIFY` nudge | user-facing freshness | one more moving part (`LISTEN/NOTIFY`) |
 
-**Rule:** a trigger records *intent* ("this row needs an embedding"); an async
-worker does the expensive work. Record intent as a **job in a queue** (not just a
-`needs_embedding` flag) — the queue gives you backlog visibility, retry/failure
-counts, and throttle control.
+We built async in [pgvector-indexes.md](pgvector-indexes.md) §4 and make it
+production-grade here; §6 shows the small step to notify-driven.
 
 ---
 
-## 4. Principle 2 — a multi-entity job queue
+## 3. The queue, carrying operational state
 
-One queue serves all embeddable entity types (here: category, brand, product,
-variant), each identified by `(entity_type, entity_id)`:
+Our starting `embedding_queue` ([pgvector-indexes.md](pgvector-indexes.md) §4) held
+just `(document_id, enqueued_at)`. For production we let the queue row **carry its
+own operational state** — attempts, last error, and a *scheduled* next attempt —
+so retries and backlog are visible and controllable:
 
 ```sql
-CREATE TABLE IF NOT EXISTS embeddings.embedding_job (
-    id           bigserial PRIMARY KEY,
-    entity_type  text NOT NULL CHECK (entity_type IN ('category','brand','product','variant')),
-    entity_id    integer NOT NULL,
-    status       text NOT NULL DEFAULT 'pending'
-                 CHECK (status IN ('pending','running','done','failed')),
-    attempts     int  NOT NULL DEFAULT 0,
-    last_error   text,
-    created_at   timestamptz NOT NULL DEFAULT now(),
-    updated_at   timestamptz NOT NULL DEFAULT now()
+CREATE TABLE embedding_queue (
+    document_id  bigint PRIMARY KEY,          -- one pending job per document (dedup)
+    enqueued_at  timestamptz NOT NULL DEFAULT now(),
+    attempts     int         NOT NULL DEFAULT 0,
+    max_attempts int         NOT NULL DEFAULT 8,
+    next_run_at  timestamptz NOT NULL DEFAULT now(),  -- not before this time
+    last_error   text
 );
--- claim ordering
-CREATE INDEX IF NOT EXISTS embedding_job_pending_idx
-    ON embeddings.embedding_job (status, created_at);
--- one job per entity — the dedup backbone
-CREATE UNIQUE INDEX IF NOT EXISTS embedding_job_entity_idx
-    ON embeddings.embedding_job (entity_type, entity_id);
+-- claim index: cheap lookup of rows that are due, oldest first
+CREATE INDEX embedding_queue_due_idx ON embedding_queue (next_run_at, enqueued_at);
 ```
 
-The unique `(entity_type, entity_id)` index is load-bearing: it lets enqueue be
-**idempotent** (collapse rapid repeated updates of the same row into one pending
-job).
+The `document_id` primary key gives us idempotent enqueue for free — rapid repeated
+edits of the same document collapse into one job (the trigger from
+[pgvector-indexes.md](pgvector-indexes.md) §4 already uses
+`ON CONFLICT (document_id) DO UPDATE SET enqueued_at = now()`).
 
-**Enqueue helper** — one function all triggers call:
-
-```sql
-CREATE OR REPLACE FUNCTION embeddings.sf_enqueue_embedding_job(
-    p_entity_type text, p_entity_id int
-) RETURNS void LANGUAGE plpgsql AS $$
-BEGIN
-    INSERT INTO embeddings.embedding_job (entity_type, entity_id)
-    VALUES (p_entity_type, p_entity_id)
-    ON CONFLICT (entity_type, entity_id) DO UPDATE      -- already queued? refresh, don't duplicate
-      SET status = CASE WHEN embeddings.embedding_job.status = 'done'
-                        THEN 'pending' ELSE embeddings.embedding_job.status END,
-          updated_at = now();
-END $$;
-```
-
-**Trigger** (one per source table) — fast, deterministic, writes a single queue
-row; fire only when embedded columns change:
-
-```sql
-CREATE OR REPLACE FUNCTION embeddings.trg_enqueue_category_embedding()
-RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-    PERFORM embeddings.sf_enqueue_embedding_job('category', NEW.id);
-    RETURN NEW;
-END $$;
-
-CREATE TRIGGER enqueue_category_embedding
-    AFTER INSERT OR UPDATE OF label, description ON product.category
-    FOR EACH ROW EXECUTE FUNCTION embeddings.trg_enqueue_category_embedding();
--- repeat for brand / product / variant
-```
-
-> Note the `UPDATE OF label, description` — the trigger fires only when a
-> *meaning-bearing* column changes, not on every row update. (Change detection in
-> §7 catches the rest.)
+> This keeps a *single* queue for one entity (`documents`). If you later embed more
+> than one kind of row, the cleanest extension is **one queue table per entity**
+> (each with its own trigger and worker), or a shared queue with an added
+> `entity` discriminator column — but don't reach for that until you actually have
+> a second entity. Start simple.
 
 ---
 
-## 5. Principle 3 — the worker (batched, concurrent, safe)
+## 4. The worker: claim due jobs, embed, upsert — idempotently
 
-A background function claims pending jobs with `FOR UPDATE SKIP LOCKED`, builds the
-per-entity "meaning string," embeds, and **idempotently upserts** the vector —
-isolating failures to one job:
+The worker claims **due** jobs (`next_run_at <= now()`, still under the attempt
+cap), embeds, and upserts into `doc_embeddings`. It's the UPDATE-to-processing idea
+from [postgresql-as-queue-table.md](../Performance/postgresql-as-queue-table.md)
+with the slow step kept outside any OLTP table's locks:
 
 ```sql
-CREATE OR REPLACE FUNCTION embeddings.sf_process_embedding_jobs(p_batch_size int DEFAULT 50)
-RETURNS integer LANGUAGE plpgsql
-SECURITY DEFINER SET search_path = pg_catalog, embeddings, product, api AS $fn$
+CREATE OR REPLACE FUNCTION process_embedding_batch(p_limit int DEFAULT 100)
+RETURNS int LANGUAGE plpgsql AS $$
 DECLARE
-    v_job   embeddings.embedding_job%ROWTYPE;
-    v_text  text;
-    v_vec   public.vector(1536);
-    v_done  int := 0;
+    r        record;
+    v_text   text;
+    v_vec    vector(384);          -- match your model's dimension
+    v_done   int := 0;
 BEGIN
-    FOR v_job IN
-        SELECT ej.* FROM embeddings.embedding_job ej
-        WHERE ej.status = 'pending'
-        ORDER BY ej.created_at
-        LIMIT p_batch_size
-        FOR UPDATE SKIP LOCKED          -- multiple workers won't double-process
+    FOR r IN
+        SELECT q.document_id
+        FROM embedding_queue q
+        WHERE q.next_run_at <= now()
+          AND q.attempts   <  q.max_attempts
+        ORDER BY q.enqueued_at
+        LIMIT p_limit
+        FOR UPDATE SKIP LOCKED       -- concurrent workers take disjoint batches
     LOOP
         BEGIN
-            UPDATE embeddings.embedding_job
-               SET status='running', attempts=attempts+1, last_error=NULL, updated_at=now()
-             WHERE id = v_job.id;
+            SELECT body INTO v_text FROM documents WHERE id = r.document_id;
 
-            -- build the meaning string per entity type (coalesce guards NULLs)
-            IF v_job.entity_type = 'product' THEN
-                SELECT coalesce(p.label,'')||' '||coalesce(b.label,'')||' '||coalesce(c.label,'')
-                       ||' '||coalesce(p.shortdescription,'')||' '||coalesce(p.longdescription,'')
-                  INTO v_text
-                  FROM product.product p
-                  JOIN product.brand b    ON b.id = p.brand_id
-                  JOIN product.category c ON c.id = p.category_id
-                 WHERE p.id = v_job.entity_id;
+            v_vec := embed(v_text)::vector(384);   -- the slow external call (placeholder)
 
-                -- api.openai_embed(...) is the PROVIDER CALL — a placeholder here.
-                -- NOT executed as-is in testing; its request shape and 1536-dim
-                -- output are per OpenAI's public docs and should work once you
-                -- supply it. Tests substituted a local function returning a real
-                -- vector(1536). For a local model, see local-embeddings-minilm.md.
-                v_vec := api.openai_embed(v_text)::public.vector(1536);
-                INSERT INTO embeddings.product_embedding (product_id, embedding)
-                VALUES (v_job.entity_id, v_vec)
-                ON CONFLICT (product_id) DO UPDATE SET embedding = EXCLUDED.embedding;
-            -- ELSIF category / brand / variant ... (same shape)
-            END IF;
+            INSERT INTO doc_embeddings (document_id, embedding)
+            VALUES (r.document_id, v_vec)
+            ON CONFLICT (document_id) DO UPDATE      -- idempotent: re-run overwrites
+                SET embedding = EXCLUDED.embedding;
 
-            UPDATE embeddings.embedding_job SET status='done', updated_at=now()
-             WHERE id = v_job.id;
+            DELETE FROM embedding_queue WHERE document_id = r.document_id;  -- success: job done
             v_done := v_done + 1;
+
         EXCEPTION WHEN OTHERS THEN
-            -- one bad job doesn't kill the batch; keep it for retry/inspection
-            UPDATE embeddings.embedding_job
-               SET status='failed', last_error=SQLERRM, updated_at=now()
-             WHERE id = v_job.id;
+            -- isolate the failure; reschedule this one job with backoff (see §5)
+            UPDATE embedding_queue
+               SET attempts    = attempts + 1,
+                   last_error  = SQLERRM,
+                   next_run_at  = now() + make_interval(secs =>
+                                    LEAST(300, (2 ^ LEAST(attempts, 8))::int) + random())
+             WHERE document_id = r.document_id;
         END;
     END LOOP;
     RETURN v_done;
-END $fn$;
+END $$;
 ```
 
-Run it from `pg_cron`, an OS cron, or an app worker: `SELECT
-embeddings.sf_process_embedding_jobs(50);` — repeatedly until it returns 0. Why it's
-production-shaped:
+Run it from `pg_cron`, OS cron, or an app loop: `SELECT process_embedding_batch();`
+until it returns 0. The production-grade properties, all from our earlier docs:
 
-- **`FOR UPDATE SKIP LOCKED`** → run many workers concurrently, no double-processing
-  (same mechanics as
-  [postgresql-as-queue-table.md](../Performance/postgresql-as-queue-table.md) §1).
-- **`ON CONFLICT DO UPDATE`** → re-running a job overwrites, never duplicates
-  (idempotent).
-- **per-job `EXCEPTION`** → failures are isolated and recorded (`last_error`), not
-  fatal to the batch.
-- **`running` status + `attempts`** → live observability of in-flight work and
-  retries.
+- **`FOR UPDATE SKIP LOCKED`** — many workers, disjoint batches, no convoy
+  ([postgresql-as-queue-table.md](../Performance/postgresql-as-queue-table.md) §1).
+- **`ON CONFLICT DO UPDATE`** — re-running a job is safe (idempotent); pairs with
+  at-least-once delivery.
+- **per-job `EXCEPTION`** — one poison row fails alone and is rescheduled, not the
+  whole batch.
+- The slow `embed()` touches no `documents` lock — the queue is a disposable table,
+  so holding its transaction is fine (the OLTP-vs-queue distinction in
+  [postgresql-as-queue-table.md](../Performance/postgresql-as-queue-table.md) §2).
 
-> **Richer context embeds better.** The product meaning string folds in brand and
-> category labels and both descriptions — more signal generally yields more useful
-> vectors than embedding a bare title.
+> **Claim style:** this deletes on success (DELETE-on-claim). Because the whole
+> claim→embed→upsert is one transaction, a crashed worker rolls back and the row
+> reappears — crash-safe, per
+> [postgresql-as-queue-table.md](../Performance/postgresql-as-queue-table.md) §2.
+> The `attempts`/`next_run_at` columns add *scheduled* retries on top.
 
 ---
 
-## 6. Principle 4a — pipeline-level retry (scheduled backoff)
+## 5. Pipeline-level retry: scheduled backoff + a cap
 
-The per-*call* retry inside `api.openai_embed` (see
-[generate_embeddings_with_retries.py](generate_embeddings_with_retries.py)) handles
-a hiccup *within* one call. The **pipeline** needs its own retry for whole-job
-failures (rate limits, timeouts, a worker crash). Add scheduling + a cap:
+`generate_embeddings_with_retries.py` retries *within* one call. The pipeline also
+needs retry *across* runs for whole-job failures (rate limit, timeout, crash). Two
+columns do it: `next_run_at` (when it's eligible again) and `max_attempts` (so it
+doesn't loop forever). The `EXCEPTION` block in §4 already sets them — exponential
+backoff with jitter, capped:
+
+```
+delay = min(300, 2^attempts) + random()   -- seconds; cap at 5 min; jitter de-syncs a worker fleet
+```
+
+Verified curve on PG 18.6 (`2^attempts`, capped at 300):
+
+```
+attempts:  0    1    2    3    4     5     6     7    8+
+delay  ≈:  1s   2s   4s   8s   16s   32s   64s   128s 256s → 300s cap
+```
+
+A job that burns through `max_attempts` simply stops being claimed (the worker's
+`attempts < max_attempts` filter excludes it). That stuck set **is** your
+dead-letter list — inspect or drain it exactly as in
+[postgresql-as-queue-table.md](../Performance/postgresql-as-queue-table.md) §6:
 
 ```sql
-ALTER TABLE embeddings.embedding_job
-    ADD COLUMN IF NOT EXISTS next_run_at  timestamptz NOT NULL DEFAULT now(),
-    ADD COLUMN IF NOT EXISTS max_attempts int        NOT NULL DEFAULT 10;
-CREATE INDEX IF NOT EXISTS embedding_job_runnable_idx
-    ON embeddings.embedding_job (status, next_run_at, created_at);
+-- what's stuck / failing
+SELECT document_id, attempts, last_error, next_run_at
+FROM embedding_queue
+WHERE attempts >= max_attempts
+ORDER BY enqueued_at;
 ```
-
-Claim only **runnable** jobs — pending *or* failed-but-due, under the attempt cap:
-
-```sql
-SELECT ej.* FROM embeddings.embedding_job ej
-WHERE ej.status IN ('pending','failed')
-  AND ej.next_run_at <= now()
-  AND ej.attempts < ej.max_attempts
-ORDER BY ej.created_at
-LIMIT p_batch_size
-FOR UPDATE SKIP LOCKED;
-```
-
-On failure, push `next_run_at` out with **exponential backoff + jitter**, capped so
-a job never stalls forever and a worker fleet never stampedes:
-
-```sql
-UPDATE embeddings.embedding_job
-   SET status='failed', last_error=SQLERRM, updated_at=now(),
-       next_run_at = now() + make_interval(secs =>
-           LEAST(300, (2 ^ LEAST(attempts, 10))::int + random() * 1.0))
- WHERE id = v_job.id;
-```
-
-Verified backoff curve (`delay = min(300, 2^attempts + jitter)`) on PG 18.6:
-
-```
-attempts | delay_secs
-       0 |   ~1        -- 1s
-       3 |   ~8        -- 8s
-       6 |  ~64
-       8 | ~256
-       9+| 300.000     -- capped at 5 min
-```
-
-Jobs that exhaust `max_attempts` drop out of the runnable set automatically — that's
-your **dead-letter** condition (inspect `status='failed' AND attempts>=max_attempts`;
-see the dead-letter section of
-[postgresql-as-queue-table.md](../Performance/postgresql-as-queue-table.md) §6 for
-routing them to a side table).
 
 ---
 
-## 7. Principle 4b — change detection (don't re-embed unchanged meaning)
+## 6. Lower latency: notify instead of poll
 
-A row `UPDATE` can fire the trigger even when no meaning-bearing content actually
-changed — each needless re-embed is wasted latency **and** API cost. Fix: hash the
-meaning string and only call the model when the hash differs.
+Polling has up to one interval of lag. To react in milliseconds, have the enqueue
+trigger ring a doorbell (building on the trigger already in
+[pgvector-indexes.md](pgvector-indexes.md) §4):
 
 ```sql
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-ALTER TABLE embeddings.product_embedding
-    ADD COLUMN IF NOT EXISTS content_hash text;   -- repeat per embedding table
+-- inside enqueue_embedding(), after the INSERT ... ON CONFLICT:
+PERFORM pg_notify('embedding_jobs', NEW.id::text);
+-- a worker: LISTEN embedding_jobs;  then run process_embedding_batch() on each signal
 ```
 
-In the worker, before embedding:
+`NOTIFY` is a **nudge, not the record** — it's best-effort and missed if no worker
+is listening. The durable `embedding_queue` stays the source of truth; the notify
+only shortens latency. If a long-lived listener is operationally awkward, just poll
+every few seconds in small batches — simpler, and usually "real-time enough."
+
+---
+
+## 7. Don't re-embed unchanged meaning (cost + throughput)
+
+A `documents` UPDATE can fire the enqueue trigger even when the embedded text didn't
+really change — and every needless re-embed is latency and (for hosted APIs) money.
+Cheap fix: remember a fingerprint of the exact text we embedded, and skip the model
+call when it matches.
 
 ```sql
--- 1. hash the freshly built meaning string
-SELECT encode(digest(v_text, 'sha256'), 'hex') INTO v_new_hash;
+ALTER TABLE doc_embeddings ADD COLUMN IF NOT EXISTS content_hash text;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- for digest()
+```
 
--- 2. compare with the stored hash; if unchanged, mark done and skip the API call
-SELECT content_hash INTO v_old_hash
-  FROM embeddings.product_embedding WHERE product_id = v_job.entity_id;
+In the worker, between fetching `v_text` and calling `embed()`:
 
-IF v_old_hash IS NOT NULL AND v_old_hash = v_new_hash THEN
-    UPDATE embeddings.embedding_job SET status='done', updated_at=now() WHERE id=v_job.id;
+```sql
+-- fingerprint the text we're about to embed
+v_hash := encode(digest(v_text, 'sha256'), 'hex');
+
+-- already embedded this exact text? then just clear the job, no model call
+SELECT content_hash INTO v_old FROM doc_embeddings WHERE document_id = r.document_id;
+IF v_old IS NOT NULL AND v_old = v_hash THEN
+    DELETE FROM embedding_queue WHERE document_id = r.document_id;
     v_done := v_done + 1;
-    CONTINUE;                      -- no embedding generated
+    CONTINUE;
 END IF;
 
--- 3. changed → embed and store the new hash alongside the vector
-v_vec := api.openai_embed(v_text)::public.vector(1536);
-INSERT INTO embeddings.product_embedding (product_id, embedding, content_hash)
-VALUES (v_job.entity_id, v_vec, v_new_hash)
-ON CONFLICT (product_id) DO UPDATE
+-- changed (or new): embed and store the vector WITH its fingerprint
+v_vec := embed(v_text)::vector(384);
+INSERT INTO doc_embeddings (document_id, embedding, content_hash)
+VALUES (r.document_id, v_vec, v_hash)
+ON CONFLICT (document_id) DO UPDATE
     SET embedding = EXCLUDED.embedding, content_hash = EXCLUDED.content_hash;
 ```
 
-This improves **cost** (fewer calls), **throughput** (less work/batch), and keeps
-**correctness** (a genuine meaning change always re-embeds). `sha256` via `digest()`
-verified on PG 18.6.
+Fewer calls, less work per batch, and correctness preserved — a genuine text change
+always re-embeds because its hash differs.
 
-### Indirect changes — cascade enqueue
+### When a *referenced* row changes
 
-The product meaning string embeds **brand and category labels**, so a category or
-brand edit makes its products' vectors stale even though `product.product` didn't
-change. Fix: when a parent changes, enqueue the parent **and** its children:
+If the embedded text is composed from more than the row itself — say a document's
+meaning string includes its author's name or a category label — then editing that
+*referenced* row makes the document's vector stale even though `documents` didn't
+change. Re-enqueue the affected documents when the referenced row changes:
 
 ```sql
-CREATE OR REPLACE FUNCTION embeddings.trg_enqueue_category_embedding()
-RETURNS trigger LANGUAGE plpgsql AS $$
+-- trigger on the referenced table (e.g. authors): re-enqueue that author's documents
+CREATE OR REPLACE FUNCTION enqueue_author_documents() RETURNS trigger
+LANGUAGE plpgsql AS $$
 BEGIN
-    PERFORM embeddings.sf_enqueue_embedding_job('category', NEW.id);   -- the category
-    INSERT INTO embeddings.embedding_job (entity_type, entity_id)      -- its products
-    SELECT 'product', p.id FROM product.product p WHERE p.category_id = NEW.id
-    ON CONFLICT (entity_type, entity_id) DO NOTHING;
+    INSERT INTO embedding_queue (document_id)
+    SELECT d.id FROM documents d WHERE d.author_id = NEW.id
+    ON CONFLICT (document_id) DO UPDATE SET enqueued_at = now();
     RETURN NEW;
 END $$;
 ```
 
-Change detection (§7) then short-circuits any product whose meaning didn't actually
-move, so cascade enqueue is cheap even when it fans out widely. Verified: editing a
-category enqueues exactly its own job plus one per child product, with no
-duplicates.
+The §7 hash check then short-circuits any document whose composed text didn't
+actually move, so even a wide fan-out stays cheap.
 
 ---
 
-## 8. Making it near-real-time
+## 8. Query embeddings: a separate, cached concern
 
-Async with a poll interval has an inherent lag (up to one poll period). Two ways to
-cut it:
+Everything so far embeds **stored** rows. A semantic search also has to embed the
+**user's query** — and that's a different shape: high volume, mostly one-off, and
+sitting directly in the request's latency path. Two choices:
 
-**Option A — `LISTEN`/`NOTIFY` (fast wakeups).** The enqueue trigger also rings a
-doorbell; a listening worker runs the processor immediately:
+- **On-demand** — embed the query every search. Simple and always correct, but an
+  API call is in the hot path and popular queries pay repeatedly.
+- **Cached** — reuse the vector for a repeated query text.
 
-```sql
--- in the trigger, after enqueuing:
-PERFORM pg_notify('embedding_jobs', NEW.entity_type || ':' || NEW.id);
--- worker: LISTEN embedding_jobs;  then call sf_process_embedding_jobs() on each signal
-```
-
-**`NOTIFY` is a doorbell, not the source of truth** — it's best-effort and lost if
-no worker is connected. The **durable queue remains the truth**; NOTIFY only reduces
-latency (same guidance as [pgvector-indexes.md](pgvector-indexes.md) §4).
-
-**Option B — scheduler-driven micro-batching.** Just run the worker often (every few
-seconds) in small batches. No long-lived listener to babysit; smooths API usage and
-reduces rate-limit spikes. Often the simpler, more robust choice for "real-time
-enough."
-
----
-
-## 9. Query embeddings: on-demand vs cached
-
-Data embeddings (products, etc.) are stored, indexed, and refreshed. **Query
-embeddings** are a second, different beast: high-volume, high-entropy, mostly
-one-off. Embedding every query on-demand is correct but puts an API call **in the
-search critical path** (latency) and repeats work for popular queries (cost).
-
-A disciplined cache keyed by `(query_text, model_id)` with a "last used" timestamp
-for eviction:
+A disciplined cache, keyed by the text *and* the model (so a model change doesn't
+serve stale vectors — see §9), with a last-used stamp for eviction:
 
 ```sql
-CREATE TABLE IF NOT EXISTS embeddings.query_embedding_cache (
+CREATE TABLE query_embedding_cache (
     query_text   text NOT NULL,
-    embedding    vector(1536) NOT NULL,
     model_id     text NOT NULL,
-    created_at   timestamptz NOT NULL DEFAULT now(),
+    embedding    vector(384) NOT NULL,
     last_used_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (query_text, model_id)
 );
-CREATE INDEX IF NOT EXISTS query_embedding_cache_last_used_idx
-    ON embeddings.query_embedding_cache (last_used_at);
-
-CREATE OR REPLACE FUNCTION embeddings.sf_get_query_embedding(
-    p_query text, p_model_id text DEFAULT 'text-embedding-3-small'
-) RETURNS vector(1536) LANGUAGE plpgsql
-SECURITY DEFINER SET search_path = pg_catalog, embeddings, api, public AS $fn$
-DECLARE v_embedding vector(1536);
-BEGIN
-    SELECT embedding INTO v_embedding            -- fast path: cache hit
-      FROM embeddings.query_embedding_cache
-     WHERE query_text = p_query AND model_id = p_model_id;
-    IF v_embedding IS NOT NULL THEN
-        UPDATE embeddings.query_embedding_cache SET last_used_at = now()
-         WHERE query_text = p_query AND model_id = p_model_id;
-        RETURN v_embedding;
-    END IF;
-
-    v_embedding := api.openai_embed(p_query)::vector(1536);   -- miss: compute + store
-    INSERT INTO embeddings.query_embedding_cache (query_text, embedding, model_id, last_used_at)
-    VALUES (p_query, v_embedding, p_model_id, now())
-    ON CONFLICT (query_text, model_id)
-        DO UPDATE SET embedding = EXCLUDED.embedding, last_used_at = now();
-    RETURN v_embedding;
-END $fn$;
+CREATE INDEX query_embedding_cache_lru_idx ON query_embedding_cache (last_used_at);
 ```
 
-Search then calls `sf_get_query_embedding('…')` instead of embedding inline — popular
-queries become a single index lookup. **A cache without eviction is a landfill**;
-TTL on `last_used_at` keeps it bounded:
+Look up, else compute-and-store:
 
 ```sql
-DELETE FROM embeddings.query_embedding_cache
-WHERE last_used_at < now() - interval '7 days';     -- run periodically
+CREATE OR REPLACE FUNCTION get_query_embedding(p_query text, p_model text)
+RETURNS vector(384) LANGUAGE plpgsql AS $$
+DECLARE v_vec vector(384);
+BEGIN
+    SELECT embedding INTO v_vec
+    FROM query_embedding_cache WHERE query_text = p_query AND model_id = p_model;
+
+    IF FOUND THEN
+        UPDATE query_embedding_cache SET last_used_at = now()
+        WHERE query_text = p_query AND model_id = p_model;
+        RETURN v_vec;
+    END IF;
+
+    v_vec := embed(p_query)::vector(384);              -- miss: compute once
+    INSERT INTO query_embedding_cache (query_text, model_id, embedding)
+    VALUES (p_query, p_model, v_vec)
+    ON CONFLICT (query_text, model_id) DO UPDATE
+        SET embedding = EXCLUDED.embedding, last_used_at = now();
+    RETURN v_vec;
+END $$;
 ```
 
-Cache only when queries repeat and you want lower latency/cost; TTL (optionally plus
-a size cap) is the first and usually sufficient eviction policy.
+A cache with no eviction is a landfill — bound it with a last-used TTL run
+periodically:
+
+```sql
+DELETE FROM query_embedding_cache WHERE last_used_at < now() - interval '7 days';
+```
+
+Cache only if queries actually repeat; TTL (optionally plus a row-count cap) is
+enough to start.
 
 ---
 
-## 10. Model changes = semantic drift (version from day one)
+## 9. Surviving a model change
 
-Embeddings are shaped by the model, its tokenizer, training data, and dimensionality.
-If the model changes:
+Embeddings are only comparable **within one model** — dimensions and geometry
+differ across models, so a vector from model A and a vector from model B can't be
+distance-compared (see [embeddings-explained.md](embeddings-explained.md) on
+cross-model incompatibility). So a model swap isn't a config change; it invalidates
+every stored vector.
 
-1. **Cross-model distances are meaningless** — never compare vectors from different
-   models (dimensions and geometry differ). See
-   [embeddings-explained.md](embeddings-explained.md) on cross-model incompatibility.
-2. Even at matching dimensions, **ranking drifts**.
-
-So treat the embedding model like an **API version**, and build that in on day one
-by tagging every stored vector:
+Build for it from the start by tagging each vector with the model that produced it:
 
 ```sql
-ALTER TABLE embeddings.product_embedding
-    ADD COLUMN IF NOT EXISTS model_id text NOT NULL DEFAULT 'text-embedding-3-small';
--- and filter searches by it: ... AND pe.model_id = 'text-embedding-3-small'
+ALTER TABLE doc_embeddings
+    ADD COLUMN IF NOT EXISTS model_id text NOT NULL DEFAULT 'minilm-l6-v2';
+-- and filter searches by the active model:  WHERE model_id = 'minilm-l6-v2'
 ```
 
-Two upgrade strategies:
+Then upgrades have a safe path:
 
-| Strategy | How | Trade-off |
+| Approach | How | Trade-off |
 |----------|-----|-----------|
-| **Hard cutover** | pick new model → re-embed all → rebuild ANN indexes → switch | simplest mentally; most expensive, needs a cutover window |
-| **Parallel run** | keep old vectors serving; build new (tagged) set alongside; validate relevance; then switch | safe, no trust break; needs `model_id` tagging and more storage during migration |
+| **Cutover** | re-embed all, rebuild the ANN index, switch the active `model_id` | simplest; needs a backfill window, briefly double-stores vectors |
+| **Parallel** | write new-model vectors alongside old, keep serving old, validate, then flip | no downtime / no quality surprise; more storage + query plumbing during migration |
 
-**What forces a full re-embed:** a model change, a change to the **meaning-string
-recipe** (e.g. now folding brand into the text), a big data-distribution shift (new
-language), or normalization-rule changes. When the *fingerprint recipe* changes, the
-fingerprints must be regenerated — which is exactly why the embedding pipeline is
-**data infrastructure, not a one-off script.**
+**What forces a full re-embed:** a new model, **or** a change to how you *compose*
+the embedded text (the hash in §7 catches per-row changes, but changing the recipe
+for everyone is a deliberate full rebuild), or a normalization change (casing,
+HTML-stripping). When the recipe changes, every fingerprint must be regenerated —
+which is why this is data infrastructure, not a one-off script.
 
 ---
 
 ## Summary
 
-1. **Two speeds of truth** — operational (fast/exact) vs semantic (eventual);
-   the pipeline keeps OLTP fast while vectors follow reliably.
-2. **Triggers enqueue, never embed** — a slow model call must never sit in the write
-   transaction.
-3. **A multi-entity job queue** keyed by `(entity_type, entity_id)` with a unique
-   index for dedup; a **batched, concurrent worker** (`SKIP LOCKED` +
-   `ON CONFLICT` + per-job `EXCEPTION`).
-4. **Pipeline-level retry** with `next_run_at` + `max_attempts` + SQL-computed
-   exponential backoff/jitter (capped); exhausted jobs are the dead-letter signal.
-5. **Change detection** (sha256 of the meaning string) skips needless re-embeds;
-   **cascade enqueue** refreshes children when a parent's label/description changes.
-6. **Near-real-time** via `LISTEN/NOTIFY` doorbell (queue stays the truth) or
-   micro-batching.
-7. **Query-embedding cache** keyed by `(query_text, model_id)` with TTL eviction —
-   keeps the API out of the search hot path.
-8. **Version the model** (`model_id` on every vector); hard-cutover vs parallel-run
-   upgrades; never compare across models.
+1. **Two clocks** — transactional (fast/exact) and semantic (soon/eventual); the
+   pipeline keeps the first fast and lets the second catch up.
+2. **Enqueue, don't embed inline** — the write records intent; a worker does the
+   slow call (our `documents` → `embedding_queue` → `doc_embeddings` flow).
+3. **Operational queue state** — `attempts` / `max_attempts` / `next_run_at` /
+   `last_error` on the queue row give scheduled retries and visible backlog.
+4. **Worker** — `FOR UPDATE SKIP LOCKED` + per-job `EXCEPTION` + idempotent
+   `ON CONFLICT` upsert; the whole job in one transaction is crash-safe.
+5. **Backoff** — `min(300, 2^attempts) + jitter`; exhausted jobs are the
+   dead-letter set.
+6. **Notify** optionally shortens latency; the queue stays the source of truth.
+7. **Hash the embedded text** to skip unchanged re-embeds; re-enqueue documents
+   when a *referenced* row changes.
+8. **Query embeddings** are a separate, cacheable concern — key by
+   `(query_text, model_id)`, evict by TTL.
+9. **Tag vectors with `model_id`** and plan cutover vs parallel-run upgrades; never
+   compare across models.
 
-Foundations: generic queue mechanics —
-[Performance/postgresql-as-queue-table.md](../Performance/postgresql-as-queue-table.md);
-transactional enqueue, batching, data modeling —
-[pgvector-indexes.md](pgvector-indexes.md).
-
----
-
-*Pattern inspiration: "Production-Ready AI Embedding Pipeline Patterns," Vibhor
-Kumar, *AI-Ready PostgreSQL 18*. SQL adapted to this repo's conventions. Pipeline
-mechanics verified end-to-end on PostgreSQL 18.6 + pgvector 0.8.7 with the real
-`vector(1536)` type (a local function stood in for `api.openai_embed`, whose
-request/response shape is per the provider's public docs).*
+Builds on: [pgvector-indexes.md](pgvector-indexes.md) ·
+[Performance/postgresql-as-queue-table.md](../Performance/postgresql-as-queue-table.md)
+· [generate_embeddings_with_retries.py](generate_embeddings_with_retries.py) ·
+[generate_embeddings_batched.py](generate_embeddings_batched.py).

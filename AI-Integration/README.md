@@ -14,7 +14,7 @@ PostgreSQL.
 - [pgvector-hnsw.md](pgvector-hnsw.md) — HNSW deep dive: graph internals, `m` / `ef_construction` / `ef_search`, build & query tuning, large-scale operation ([demo-hnsw.sql](demo-hnsw.sql))
 - [pgvector-ivfflat.md](pgvector-ivfflat.md) — IVFFlat deep dive: k-means lists, `lists` / `probes`, build-after-data, measured recall, large-scale operation ([demo-ivfflat.sql](demo-ivfflat.sql))
 - [hybrid-search.md](hybrid-search.md) — combining pgvector with scalar (B-tree) filters and full-text (GIN) search; filtering-after-ANN-scan, iterative scans, partial indexes, **Reciprocal Rank Fusion (RRF)** for blending semantic + lexical relevance, and large-scale guidance
-- [embedding-pipeline-patterns.md](embedding-pipeline-patterns.md) — **production-grade** async embedding pipeline: two-speeds-of-truth, triggers-enqueue-not-embed, a multi-entity job queue + batched concurrent worker, pipeline-level retry (`next_run_at` + backoff), change detection (sha256) + cascade re-embedding, `LISTEN/NOTIFY` vs micro-batching, a query-embedding cache with TTL, and model versioning for semantic drift (verified on PG 18.6)
+- [embedding-pipeline-patterns.md](embedding-pipeline-patterns.md) — **production-grade** async embedding pipeline built on our `documents` → `embedding_queue` → `doc_embeddings` flow: two clocks (transactional vs semantic), enqueue-don't-embed, a worker with scheduled retry (`attempts`/`next_run_at`/backoff) over `FOR UPDATE SKIP LOCKED`, content-hash skip of unchanged re-embeds, re-enqueue on referenced-row change, `LISTEN/NOTIFY` vs polling, a `(query_text, model_id)` query cache with TTL, and `model_id` versioning (verified on PG 18.6 + pgvector 0.8.7)
 
 <!--
 Planned / future topics:
