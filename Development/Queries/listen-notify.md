@@ -26,10 +26,33 @@ Two `psql` sessions. Session 1 subscribes and waits; session 2 fires.
 
 ```sql
 LISTEN jobs;
--- psql prints notifications when it next checks the connection; an easy way to
--- block and watch is to run an empty idle query:
+-- psql only prints notifications at a command boundary (between statements), not
+-- while a query is running. pg_sleep just keeps the session busy so you have a
+-- window to watch; it is NOT a recheck interval and NOT an exit timer.
 SELECT pg_sleep(30);
 ```
+
+Be aware of the timing (verified on PG 18.6): a notification that arrives *during*
+`pg_sleep(30)` is **buffered and printed only when the sleep returns** — up to 30 s
+later — because psql doesn't interrupt a running query to print. So a single long
+`pg_sleep` is a poor way to watch live. To see notifications promptly, run **several
+short, separate** statements so each one is a command boundary that flushes anything
+pending:
+
+```sql
+LISTEN jobs;
+SELECT pg_sleep(1);   -- run these one after another (or paste a few at once);
+SELECT pg_sleep(1);   -- a notification surfaces right after the statement that was
+SELECT pg_sleep(1);   -- running when it arrived — within ~1s, not 30s
+```
+
+> Note: `\watch` does **not** work for this — verified on PG 18.6, a `\watch`
+> loop never printed an arriving notification, because it doesn't process pending
+> notifications between iterations. Use *separate* statements as above.
+
+A real application doesn't poll like this — its driver delivers notifications on the
+socket asynchronously (the worker example in §4 uses `select()` on the connection).
+The `pg_sleep` trick is only for eyeballing it in `psql`.
 
 **Session 2 (notifier):**
 
