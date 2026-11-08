@@ -20,7 +20,7 @@ aws sts get-caller-identity --query 'Arn' --output text
 ```
 
 ```text
-arn:aws:iam::853595176342:user/cloud_user
+arn:aws:iam::123456789012:user/cloud_user
 ```
 
 ```bash
@@ -31,7 +31,7 @@ aws rds describe-db-instances --db-instance-identifier postgres-instance1 \
 ```text
 {
     "Dbi": "db-IYF56K6FHWKHL2MAPU6TQPOTSE",
-    "Arn": "arn:aws:rds:us-east-1:853595176342:db:postgres-instance1",
+    "Arn": "arn:aws:rds:us-east-1:123456789012:db:postgres-instance1",
     "Iam": true
 }
 ```
@@ -55,7 +55,7 @@ id with the database username:
              "rds-db:connect"
          ],
          "Resource": [
-             "arn:aws:rds-db:us-east-1:853595176342:dbuser:db-IYF56K6FHWKHL2MAPU6TQPOTSE/cloud_user",
+             "arn:aws:rds-db:us-east-1:123456789012:dbuser:db-IYF56K6FHWKHL2MAPU6TQPOTSE/cloud_user",
          ]
       }
    ]
@@ -64,7 +64,7 @@ id with the database username:
 
 In the A Cloud Guru sandbox attaching this policy was not strictly necessary,
 since `cloud_user` already has broad privileges — but this is the policy you
-would attach to the IAM user `853595176342:user/cloud_user` in a real account.
+would attach to the IAM user `123456789012:user/cloud_user` in a real account.
 
 ## Create the database role and grant `rds_iam`
 
@@ -103,9 +103,9 @@ credential, and `X-Amz-Expires=900` — the token is valid for 15 minutes:
 echo $PGPASSWORD 
 postgres-instance1.ck4o6l6o9kyg.us-east-1.rds.amazonaws.com:5432/?
 Action=connect&DBUser=cloud_user&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=
-AKIA4NPR4XWLDEIKZQLQ%2F20211030%2Fus-east-1%2Frds-db%2Faws4_request&X-Amz-Date=20211030T025117Z&
+AKIAXXXXXXXXXXXXXXXX%2F20211030%2Fus-east-1%2Frds-db%2Faws4_request&X-Amz-Date=20211030T025117Z&
 X-Amz-Expires=900&X-Amz-SignedHeaders=host&
-X-Amz-Signature=99b4b724ff566e2a30db834b5f49727a4cf2de4da91ac6a721711cd3bc506499
+X-Amz-Signature=<signature-redacted>
 ```
 
 ## Connect with psql
