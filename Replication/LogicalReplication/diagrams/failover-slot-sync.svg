@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1300 400" width="1300" height="400" font-family="Helvetica,Arial,sans-serif" font-size="12">
+<defs><marker id="a" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#333"/></marker></defs>
+<rect width="1300" height="400" fill="white"/>
+<rect x="20" y="20" width="300" height="340" rx="10" fill="none" stroke="#999999" stroke-dasharray="6 4"/>
+<text x="170.0" y="36" text-anchor="middle" font-weight="bold">Primary</text>
+<rect x="520" y="20" width="300" height="340" rx="10" fill="none" stroke="#999999" stroke-dasharray="6 4"/>
+<text x="670.0" y="36" text-anchor="middle" font-weight="bold">Physical standby</text>
+<rect x="1020" y="20" width="240" height="340" rx="10" fill="none" stroke="#999999" stroke-dasharray="6 4"/>
+<text x="1140.0" y="36" text-anchor="middle" font-weight="bold">Subscriber</text>
+<line x1="300" y1="229" x2="540" y2="281" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="420" y="251" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">WAL</text>
+<line x1="300" y1="90" x2="540" y2="90" stroke="#333" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<text x="420" y="86" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">slot position (polled)</text>
+<line x1="670" y1="120" x2="670" y2="170" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="670" y="141" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">creates/updates</text>
+<line x1="1140" y1="120" x2="1140" y2="190" stroke="#333" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<text x="1140" y="151" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">repoint</text>
+<line x1="800" y1="210" x2="1040" y2="228" stroke="#333" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<text x="920" y="215" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">takes over</text>
+<rect x="40" y="60" width="260" height="60" rx="8" fill="#f8cecc" stroke="#b85450"/>
+<text x="170.0" y="86" text-anchor="middle" font-weight="bold">Logical slot s</text>
+<text x="170.0" y="102" text-anchor="middle">failover = true</text>
+<rect x="40" y="170" width="260" height="60" rx="8" fill="#f8cecc" stroke="#b85450"/>
+<text x="170.0" y="196" text-anchor="middle" font-weight="bold">Physical slot sb1</text>
+<text x="170.0" y="212" text-anchor="middle">(feeds the standby)</text>
+<rect x="40" y="280" width="260" height="60" rx="8" fill="#dae8fc" stroke="#6c8ebf"/>
+<text x="170.0" y="306" text-anchor="middle" font-weight="bold">synchronized_standby_slots='sb1'</text>
+<text x="170.0" y="322" text-anchor="middle">(logical walsender waits for sb1)</text>
+<rect x="540" y="60" width="260" height="60" rx="8" fill="#e1d5e7" stroke="#9673a6"/>
+<text x="670.0" y="86" text-anchor="middle" font-weight="bold">slotsync worker</text>
+<text x="670.0" y="102" text-anchor="middle">sync_replication_slots = on</text>
+<rect x="540" y="170" width="260" height="60" rx="8" fill="#f8cecc" stroke="#b85450"/>
+<text x="670.0" y="196" text-anchor="middle" font-weight="bold">Slot s (synced = true)</text>
+<text x="670.0" y="212" text-anchor="middle">copy of restart/confirmed LSN</text>
+<rect x="540" y="280" width="260" height="60" rx="8" fill="#e1d5e7" stroke="#9673a6"/>
+<text x="670.0" y="298" text-anchor="middle" font-weight="bold">walreceiver</text>
+<text x="670.0" y="314" text-anchor="middle">primary_slot_name = sb1</text>
+<text x="670.0" y="330" text-anchor="middle">primary_conninfo has dbname=</text>
+<rect x="1040" y="60" width="200" height="60" rx="8" fill="#d5e8d4" stroke="#82b366"/>
+<text x="1140.0" y="86" text-anchor="middle" font-weight="bold">Apply worker</text>
+<text x="1140.0" y="102" text-anchor="middle">subscription failover=true</text>
+<rect x="1040" y="190" width="200" height="90" rx="8" fill="#f5f5f5" stroke="#666666"/>
+<text x="1140.0" y="223" text-anchor="middle" font-weight="bold">After promotion:</text>
+<text x="1140.0" y="239" text-anchor="middle">ALTER SUBSCRIPTION</text>
+<text x="1140.0" y="255" text-anchor="middle">... CONNECTION (new host)</text>
+</svg>

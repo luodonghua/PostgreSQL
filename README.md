@@ -99,6 +99,23 @@ Authentication, authorization, and access control.
 - [connect-rds-postgresql-with-iam-authentication.md](Security/connect-rds-postgresql-with-iam-authentication.md) — IAM authentication to RDS, with SSL modes
 - [krb5_pac_info.md](Security/krb5_pac_info.md) / [krb5_pac_info.c](Security/krb5_pac_info.c) — Kerberos PAC info
 
+### Replication
+Study notes (L200–L400) for learning replication without reading the source or the official docs. Tested on
+PostgreSQL 18.6 with runnable lab scripts; non-GA features are labelled. Overview: [Replication/README.md](Replication/README.md).
+
+**Logical replication** ([LogicalReplication/](Replication/LogicalReplication/README.md))
+- [README.md](Replication/LogicalReplication/README.md) — index, version policy, feature timeline, glossary; [lab.sh](Replication/LogicalReplication/lab.sh) builds a throwaway publisher + subscriber
+- [01 architecture](Replication/LogicalReplication/01-logical-vs-physical-and-architecture.md) · [02 publications](Replication/LogicalReplication/02-publications.md) · [03 subscriptions](Replication/LogicalReplication/03-subscriptions.md) · [04 step-by-step setup](Replication/LogicalReplication/04-step-by-step-setup-guide.md)
+- [05 slots](Replication/LogicalReplication/05-replication-slots.md) · [06 decoding](Replication/LogicalReplication/06-logical-decoding.md) · [07 reorder buffer & large transactions](Replication/LogicalReplication/07-reorderbuffer-and-large-transactions.md) · [08 pgoutput protocol](Replication/LogicalReplication/08-pgoutput-protocol.md) · [09 replica identity](Replication/LogicalReplication/09-replica-identity.md)
+- [10 initial sync](Replication/LogicalReplication/10-initial-sync-tablesync.md) · [11 apply & parallel apply](Replication/LogicalReplication/11-apply-workers-and-parallel-apply.md) · [12 conflicts](Replication/LogicalReplication/12-conflicts-and-error-handling.md) · [13 limitations](Replication/LogicalReplication/13-limitations.md)
+- [14 monitoring](Replication/LogicalReplication/14-monitoring-and-troubleshooting.md) · [15 best practices](Replication/LogicalReplication/15-best-practices.md) · [16 failover & HA](Replication/LogicalReplication/16-failover-and-ha.md) · [17 upgrades & migrations](Replication/LogicalReplication/17-upgrades-and-migrations.md) · [18 use cases & RDS/Aurora](Replication/LogicalReplication/18-use-cases-and-patterns.md) · [19 source map](Replication/LogicalReplication/19-source-code-map.md)
+
+**Physical replication** ([PhysicalReplication/](Replication/PhysicalReplication/README.md))
+- [README.md](Replication/PhysicalReplication/README.md) — index and measured highlights; [lab.sh](Replication/PhysicalReplication/lab.sh) builds a throwaway primary + standby
+- [01 architecture](Replication/PhysicalReplication/01-streaming-replication-architecture.md) · [02 standby setup](Replication/PhysicalReplication/02-standby-setup-guide.md) · [03 slots & WAL retention](Replication/PhysicalReplication/03-replication-slots-and-wal-retention.md) · [04 synchronous replication](Replication/PhysicalReplication/04-synchronous-replication.md)
+- [05 hot standby conflicts](Replication/PhysicalReplication/05-hot-standby-and-query-conflicts.md) · [06 monitoring & lag](Replication/PhysicalReplication/06-monitoring-and-lag.md) · [07 failover, switchover, pg_rewind](Replication/PhysicalReplication/07-failover-switchover-promotion.md) · [08 cascading, delayed, archive, PITR](Replication/PhysicalReplication/08-cascading-delayed-archive.md)
+- [09 best practices & troubleshooting](Replication/PhysicalReplication/09-best-practices-and-troubleshooting.md) · [10 RDS/Aurora](Replication/PhysicalReplication/10-rds-aurora-physical-replication.md) · [11 source map](Replication/PhysicalReplication/11-source-code-map.md)
+
 ### RDS-PostgreSQL
 Amazon RDS for PostgreSQL specifics.
 

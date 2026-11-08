@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 340" width="1240" height="340" font-family="Helvetica,Arial,sans-serif" font-size="12">
+<defs><marker id="a" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#333"/></marker></defs>
+<rect width="1240" height="340" fill="white"/>
+<line x1="140" y1="70" x2="190" y2="70" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="320" y1="70" x2="400" y2="70" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="360" y="66" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">records</text>
+<line x1="540" y1="70" x2="690" y2="70" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="615" y="66" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">changes + commits</text>
+<line x1="760" y1="200" x2="760" y2="100" stroke="#333" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<text x="760" y="146" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">snapshot</text>
+<line x1="540" y1="234" x2="690" y2="231" stroke="#333" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<line x1="524" y1="100" x2="706" y2="200" stroke="#333" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<text x="615" y="146" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">running xacts</text>
+<line x1="830" y1="70" x2="910" y2="70" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="870" y="66" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">on COMMIT</text>
+<line x1="1030" y1="70" x2="1080" y2="70" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="1140" y1="100" x2="1140" y2="200" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<rect x="20" y="40" width="120" height="60" rx="8" fill="#fff2cc" stroke="#d6b656"/>
+<text x="80.0" y="66" text-anchor="middle" font-weight="bold">WAL on disk</text>
+<text x="80.0" y="82" text-anchor="middle">(wal_level=logical)</text>
+<rect x="190" y="40" width="130" height="60" rx="8" fill="#e1d5e7" stroke="#9673a6"/>
+<text x="255.0" y="58" text-anchor="middle" font-weight="bold">XLogReader</text>
+<text x="255.0" y="74" text-anchor="middle">reads from slot's</text>
+<text x="255.0" y="90" text-anchor="middle">restart_lsn</text>
+<rect x="400" y="40" width="140" height="60" rx="8" fill="#e1d5e7" stroke="#9673a6"/>
+<text x="470.0" y="58" text-anchor="middle" font-weight="bold">decode.c</text>
+<text x="470.0" y="74" text-anchor="middle">per-rmgr dispatch</text>
+<text x="470.0" y="90" text-anchor="middle">(Heap, Xact, Standby)</text>
+<rect x="690" y="40" width="140" height="60" rx="8" fill="#f8cecc" stroke="#b85450"/>
+<text x="760.0" y="58" text-anchor="middle" font-weight="bold">ReorderBuffer</text>
+<text x="760.0" y="74" text-anchor="middle">queue changes per xid;</text>
+<text x="760.0" y="90" text-anchor="middle">spill / stream</text>
+<rect x="910" y="40" width="120" height="60" rx="8" fill="#dae8fc" stroke="#6c8ebf"/>
+<text x="970.0" y="58" text-anchor="middle" font-weight="bold">Output plugin</text>
+<text x="970.0" y="74" text-anchor="middle">pgoutput /</text>
+<text x="970.0" y="90" text-anchor="middle">test_decoding</text>
+<rect x="1080" y="40" width="120" height="60" rx="8" fill="#e1d5e7" stroke="#9673a6"/>
+<text x="1140.0" y="66" text-anchor="middle" font-weight="bold">walsender</text>
+<text x="1140.0" y="82" text-anchor="middle">sends bytes</text>
+<rect x="400" y="200" width="140" height="70" rx="8" fill="#fff2cc" stroke="#d6b656"/>
+<text x="470.0" y="223" text-anchor="middle" font-weight="bold">System catalogs</text>
+<text x="470.0" y="239" text-anchor="middle">(old row versions</text>
+<text x="470.0" y="255" text-anchor="middle">kept by catalog_xmin)</text>
+<rect x="690" y="200" width="140" height="60" rx="8" fill="#f8cecc" stroke="#b85450"/>
+<text x="760.0" y="218" text-anchor="middle" font-weight="bold">SnapBuild</text>
+<text x="760.0" y="234" text-anchor="middle">catalog snapshot</text>
+<text x="760.0" y="250" text-anchor="middle">for each commit</text>
+<rect x="1080" y="200" width="120" height="60" rx="8" fill="#d5e8d4" stroke="#82b366"/>
+<text x="1140.0" y="226" text-anchor="middle" font-weight="bold">Apply worker</text>
+<text x="1140.0" y="242" text-anchor="middle">on subscriber</text>
+</svg>
