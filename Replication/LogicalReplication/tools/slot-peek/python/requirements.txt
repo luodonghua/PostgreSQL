@@ -1,0 +1,3 @@
+# Either driver works; install one of them. These are the versions slot_peek.py was tested with.
+psycopg[binary]==3.1.17
+# psycopg2-binary==2.9.10

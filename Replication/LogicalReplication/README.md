@@ -76,6 +76,13 @@ Release assignments for 10–18 are from PostgreSQL release notes as I know them
 - **Origin** — subscriber-side record of how far a given source has been applied.
 - **LSN** — log sequence number; a byte position in WAL (`0/17C6048`).
 
+## Tools
+
+[`tools/slot-peek`](tools/slot-peek/README.md) shows what is waiting in a logical
+replication slot (transactions, tables, operations, keys, values) without consuming it,
+and can generate replay SQL for reconciliation. Python and psql versions, PostgreSQL 10+,
+RDS/Aurora.
+
 ## Lab helper
 
 [`lab.sh`](lab.sh) spins up a throwaway publisher (5433) and subscriber (5434)

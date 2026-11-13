@@ -294,6 +294,14 @@ Rows differ between sides
 └─ confl_* counters / log lines → topic 12; reconcile with a checksum compare, then repair
 ```
 
+### Seeing what is inside a slot
+
+To see *which* transactions, tables and rows a slot is holding (a huge transaction, a hot
+table, changes the subscriber never applied), use the
+[slot-peek tools](tools/slot-peek/README.md) (Python or psql). They decode a slot without
+consuming it. On PostgreSQL 12+ they read a temporary copy, so the subscriber keeps running.
+They can also generate replay SQL for reconciliation after a promotion.
+
 ## Log messages you should recognise
 
 | Message | Meaning |
