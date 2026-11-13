@@ -9,13 +9,73 @@ PostgreSQL 12+ it doesn't disturb the slot's consumer either. Use it to:
   and generate SQL to replay them.
 - **Audit a slot** that belongs to a CDC tool (Debezium, AWS DMS, pglogical, ...).
 
-There are two equivalent implementations with the same output. Pick the one that suits you:
+## Start here: the simple script (no objects created)
+
+For the common case, troubleshooting native logical replication, use
+[`sql/peek_pgoutput_simple.sql`](sql/peek_pgoutput_simple.sql). It is **one read-only
+`SELECT`**: it creates no functions, tables or slot copies, so it needs no change approval.
+
+```bash
+psql -v slot=app_sub -f peek_pgoutput_simple.sql                  # first 100 changes
+psql -v slot=app_sub -v limit=1000 -f peek_pgoutput_simple.sql    # more rows
+psql -v slot=app_sub -v publication=app_pub -f peek_pgoutput_simple.sql
+```
+
+It assumes:
+- a **pgoutput** slot (native logical replication),
+- the slot is **not in use**: pause the subscription first (`ALTER SUBSCRIPTION <sub> DISABLE;` on the
+  subscriber, `ENABLE` afterwards). Application writes continue; the slot just keeps its WAL meanwhile,
+- a role with `REPLICATION` (RDS/Aurora: `rds_replication`); any PostgreSQL 10+.
+
+Output, one row per change (lsn, commit time, schema, table, operation, primary key):
+
+```
+slot app_sub | publications app_pub | pending WAL 716 kB (from 0/17AC5F0) | limit 100
+    lsn    |          commit_time           | schema_name | table_name  | operation |         pk
+-----------+--------------------------------+-------------+-------------+-----------+---------------------
+ 0/17AC5F0 | 2026-11-13 22:35:15.961678 +08 | public      | orders      | INSERT    | id=2
+ 0/17AC6B0 | 2026-11-13 22:35:15.968513 +08 | public      | order_items | INSERT    | order_id=2, line=1
+ 0/17AC770 | 2026-11-13 22:35:15.972451 +08 | public      | orders      | UPDATE    | id=1
+ 0/17AC7D0 | 2026-11-13 22:35:15.972451 +08 | public      | order_items | DELETE    | order_id=1, line=2
+ 0/17AC848 | 2026-11-13 22:35:16.030953 +08 | public      | order_items | INSERT    | order_id=3, line=1
+ 0/17AC8D8 | 2026-11-13 22:35:16.030953 +08 | public      | order_items | INSERT    | order_id=3, line=2
+ ...
+(100 rows)
+
+Limit reached: more changes may be pending. Re-run with a larger -v limit=... to see them.
+```
+
+| Column | Meaning |
+|---|---|
+| `lsn` | WAL position of the change. Changes of one transaction share a `commit_time` |
+| `pk` | The replica-identity (key) columns and values, enough to find the row on the subscriber. For `UPDATE` it is the **old** key if the key changed. For a table with `REPLICA IDENTITY FULL`, all columns are listed. `TRUNCATE` has no key |
+| `pending WAL` | WAL between the slot's `confirmed_flush_lsn` and now: how far behind the subscriber is |
+
+Behaviour to know:
+- **`limit`** counts changes shown (default 100). A transaction is always read to its end, so one
+  huge transaction can take a while (a 60,000-row one took about 4 seconds in the test lab).
+  `-v timeout=300s` (default) stops runaway reads.
+- It shows changes of the publications' tables only. An unknown `publication=` name returns
+  nothing and the server prints a `skipped loading publication` warning.
+- It refuses, with a clear message, when the slot doesn't exist, belongs to another database,
+  isn't pgoutput, or is in use.
+- It shows keys only, not row values, and doesn't generate replay SQL. Use the tools below for those.
+
+Verified identical (lsn, table, operation, key) to the full tool for 60,016 changes on PostgreSQL
+12, 14, 16 and 18; it created no catalog objects and left the slot's position unchanged.
+
+## The full tools
+
+If you need row values, replay SQL, an in-use slot, other plugins, or a summary, use these:
+
+There are two equivalent implementations with the same output (the SQL one creates helper
+functions in `pg_temp`, which disappear with the session). Pick the one that suits you:
 
 | | Python | SQL (psql + PL/pgSQL) |
 |---|---|---|
 | Files | [`python/slot_peek.py`](python/slot_peek.py) | [`sql/overview.sql`](sql/overview.sql), [`sql/slot_peek.sql`](sql/slot_peek.sql), [`sql/position.sql`](sql/position.sql) |
 | Needs | Python 3.8+ and `psycopg` 3 **or** `psycopg2` ([`requirements.txt`](python/requirements.txt)) | `psql` only |
-| Installs anything on the server? | No | No: helper functions are created in `pg_temp` and disappear with the session |
+| Installs anything on the server? | No | No persistent objects; session-local helpers in `pg_temp` |
 | Extra output formats | `csv`, `jsonl` | — |
 
 ## Quick start
@@ -257,6 +317,7 @@ If the slot is still in use, the tool refuses and prints these instructions.
 
 | Environment | Result |
 |---|---|
+| `peek_pgoutput_simple.sql`, PostgreSQL 12, 14, 16, 18 | 60,016 changes identical to the full tool; no catalog objects created, slot position unchanged; error paths checked (missing slot, other database, wrong plugin, slot in use, no publication); keys with multibyte text, bytea, uuid, timestamptz, bigint extremes, quoted schema and table names |
 | PostgreSQL 12.22, 14.25, 16.16, 18.6 (local) | Both tools × both decoders: replay SQL identical to the publisher; original slot unchanged |
 | pglogical 2.4.8 on PostgreSQL 18.7 | pglogical slot in use, read through the text decoder |
 | Amazon RDS for PostgreSQL 18.6 | Both tools, both decoders, slot in use by a CDC client; as the master user and as a role with only `rds_replication`. Original slot unchanged, no copies left behind. RDS's `output_plugin_libraries` already lists `pgoutput, test_decoding, wal2json, decoder_raw, pglogical, pglogical_output, pgactive` |
