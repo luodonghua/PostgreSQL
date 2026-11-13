@@ -9,11 +9,50 @@ PostgreSQL 12+ it doesn't disturb the slot's consumer either. Use it to:
   and generate SQL to replay them.
 - **Audit a slot** that belongs to a CDC tool (Debezium, AWS DMS, pglogical, ...).
 
-## Start here: the simple script (no objects created)
+## Start here: the simple scripts (no objects created)
 
-For the common case, troubleshooting native logical replication, use
-[`sql/peek_pgoutput_simple.sql`](sql/peek_pgoutput_simple.sql). It is **one read-only
-`SELECT`**: it creates no functions, tables or slot copies, so it needs no change approval.
+For the common case, troubleshooting native logical replication, use one of these. Each is
+**one read-only `SELECT`**: it creates no functions, tables or slot copies, so it needs no
+change approval. They return the same rows; pick the one that matches how you work:
+
+| | For | How you set the slot name and limit |
+|---|---|---|
+| [`sql/peek_pgoutput_simple.sql`](sql/peek_pgoutput_simple.sql) | `psql` | `-v slot=... -v limit=...` on the command line |
+| [`sql/peek_pgoutput_ide.sql`](sql/peek_pgoutput_ide.sql) | **SQL IDEs** (pgAdmin, DBeaver, DataGrip, ...) | Edit the three values in the `params` block at the top, then run |
+
+### In an IDE
+
+1. Connect to the publisher, to the database the slot belongs to.
+2. Open `peek_pgoutput_ide.sql` in the query editor.
+3. Edit the `params` block at the top, then run the whole statement:
+
+```sql
+WITH RECURSIVE params AS (
+  SELECT 'my_slot'::text AS slot_name,      -- <== EDIT: the replication slot name
+         100             AS row_limit,      -- <== EDIT: changes to show (a transaction is always read to its end)
+         ''::text        AS publications    -- <== EDIT (optional): comma-separated publication names; empty = all publications
+),
+```
+
+It has no psql commands, no `?` or `:name` markers, and is one statement, so IDEs run it as-is.
+The result is a single grid. The first row, with no `lsn`, describes what was read. **Problems
+show up in that row too** (missing slot, slot in use, wrong plugin, other database, no
+publication) instead of as an error. If the limit was hit, the last row says so.
+
+```
+    lsn    |          commit_time          | schema_name | table_name  | operation |         pk         | note
+-----------+-------------------------------+-------------+-------------+-----------+--------------------+------------------------------------------
+           |                               |             |             |           |                    | slot app_sub | publications app_pub | pending WAL 716 kB (from 0/17AC5F0) | showing up to 6 changes
+ 0/17AC5F0 | 2026-11-13 22:41:04.295705+08 | public      | orders      | INSERT    | id=2               |
+ 0/17AC6B0 | 2026-11-13 22:41:04.304097+08 | public      | order_items | INSERT    | order_id=2, line=1 |
+ 0/17AC770 | 2026-11-13 22:41:04.309823+08 | public      | orders      | UPDATE    | id=1               |
+ 0/17AC7D0 | 2026-11-13 22:41:04.309823+08 | public      | order_items | DELETE    | order_id=1, line=2 |
+ 0/17AC848 | 2026-11-13 22:41:04.380405+08 | public      | order_items | INSERT    | order_id=3, line=1 |
+ 0/17AC8D8 | 2026-11-13 22:41:04.380405+08 | public      | order_items | INSERT    | order_id=3, line=2 |
+           |                               |             |             |           |                    | Limit reached: more changes may be pending. Increase row_limit in the params block to see them.
+```
+
+### With psql
 
 ```bash
 psql -v slot=app_sub -f peek_pgoutput_simple.sql                  # first 100 changes
@@ -61,8 +100,9 @@ Behaviour to know:
   isn't pgoutput, or is in use.
 - It shows keys only, not row values, and doesn't generate replay SQL. Use the tools below for those.
 
-Verified identical (lsn, table, operation, key) to the full tool for 60,016 changes on PostgreSQL
-12, 14, 16 and 18; it created no catalog objects and left the slot's position unchanged.
+Both scripts were verified identical (lsn, table, operation, key) to the full tool for 60,016
+changes on PostgreSQL 12, 14, 16 and 18. They created no catalog objects and left the slot's
+position unchanged.
 
 ## The full tools
 
@@ -317,6 +357,7 @@ If the slot is still in use, the tool refuses and prints these instructions.
 
 | Environment | Result |
 |---|---|
+| `peek_pgoutput_ide.sql`, PostgreSQL 12 and 18 | Same 60,016 changes as the psql script; sent as one plain query (no psql commands), through the extended protocol (`\bind`) and as a `PREPARE`d statement; all error cases reported in the note row. Not run in pgAdmin or DBeaver themselves |
 | `peek_pgoutput_simple.sql`, PostgreSQL 12, 14, 16, 18 | 60,016 changes identical to the full tool; no catalog objects created, slot position unchanged; error paths checked (missing slot, other database, wrong plugin, slot in use, no publication); keys with multibyte text, bytea, uuid, timestamptz, bigint extremes, quoted schema and table names |
 | PostgreSQL 12.22, 14.25, 16.16, 18.6 (local) | Both tools × both decoders: replay SQL identical to the publisher; original slot unchanged |
 | pglogical 2.4.8 on PostgreSQL 18.7 | pglogical slot in use, read through the text decoder |

@@ -298,8 +298,9 @@ Rows differ between sides
 
 To see *which* transactions, tables and keys a slot is holding (a huge transaction, a hot
 table, changes the subscriber never applied), use
-[`peek_pgoutput_simple.sql`](tools/slot-peek/sql/peek_pgoutput_simple.sql): a single read-only
-query that creates no objects (pgoutput slot, subscription paused). The
+[`peek_pgoutput_simple.sql`](tools/slot-peek/sql/peek_pgoutput_simple.sql) (psql) or
+[`peek_pgoutput_ide.sql`](tools/slot-peek/sql/peek_pgoutput_ide.sql) (pgAdmin, DBeaver and other
+SQL IDEs): a single read-only query that creates no objects (pgoutput slot, subscription paused). The
 [slot-peek tools](tools/slot-peek/README.md) go further: row values, in-use slots, other plugins,
 and replay SQL for reconciliation after a promotion (Python or psql).
 

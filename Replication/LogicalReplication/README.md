@@ -80,7 +80,7 @@ Release assignments for 10–18 are from PostgreSQL release notes as I know them
 
 [`tools/slot-peek`](tools/slot-peek/README.md) shows what is waiting in a logical
 replication slot (transactions, tables, operations, keys, values) without consuming it.
-Start with `peek_pgoutput_simple.sql`, a single read-only query that creates no objects. The
+Start with `peek_pgoutput_simple.sql` (psql) or `peek_pgoutput_ide.sql` (SQL IDEs), single read-only queries that create no objects. The
 fuller Python and psql versions add row values, replay SQL for reconciliation and in-use slots.
 PostgreSQL 10+, RDS/Aurora.
 

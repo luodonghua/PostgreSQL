@@ -1,6 +1,7 @@
 -- peek_pgoutput_simple.sql - list the changes waiting in a pgoutput slot.
 --
 -- One read-only query. It creates nothing in the database: no functions, no tables, no slot copy.
+-- (For pgAdmin / DBeaver / other SQL IDEs use peek_pgoutput_ide.sql instead: same result, no psql commands.)
 -- Requirements:
 --   * the slot uses pgoutput (native logical replication)
 --   * the slot is NOT in use (no subscriber connected). Pause the subscription first if needed:
