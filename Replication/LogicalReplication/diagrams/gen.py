@@ -255,19 +255,19 @@ def _():
         ("g2", 970, 330, 300, 60, "G2 > logical_decoding_work_mem\nreceived_lsn advancing\nwalsender WalSenderWriteData", "proc"),
         ("g3", 1300, 330, 330, 60, "received_lsn frozen\nwalsender WalSenderWriteData\n-> apply worker wait event", "proc"),
         # G1 leaves
-        ("r1", 220, 470, 175, 100, "IO:WalRead\nWAL read slow:\nstorage IOPS / MB/s,\ncold backlog\n(measured 73 %)", "sub"),
-        ("r2", 410, 470, 175, 100, "CPU (NULL)\ndecoding CPU-bound:\nbacklog, unpublished\ntraffic, RI FULL\n(measured 94 %)", "sub"),
+        ("r1", 220, 470, 175, 100, "IO:WalRead\nWAL read slow:\nstorage IOPS / MB/s,\ncold backlog", "sub"),
+        ("r2", 410, 470, 175, 100, "CPU (NULL)\ndecoding CPU-bound:\nbacklog, unpublished\ntraffic, RI FULL", "sub"),
         ("r3", 600, 470, 190, 100, "IO:ReorderBuffer\nWrite / Read\nbig txns spilling:\nlogical_decoding_work_mem,\nstreaming (topic 07)", "sub"),
         # G0 leaf
         ("r0", 810, 470, 160, 100, "Large txn not yet\ncommitted / sent\n(streaming off):\nwait, or enable\nstreaming", "sub"),
         # G2 leaf
-        ("n1", 990, 470, 260, 100, "Network slow\napply worker idle\n(LogicalApplyMain)\nbandwidth, latency, TCP\n(measured 78 % / 63 %)", "sub"),
+        ("n1", 990, 470, 260, 100, "Network slow\napply worker idle\n(LogicalApplyMain)\nbandwidth, latency, TCP", "sub"),
         # G3 leaves
-        ("a4", 1270, 470, 140, 100, "Lock:*\nfind the blocker\nin pg_locks\n(measured 97 %)", "sub"),
+        ("a4", 1270, 470, 140, 100, "Lock:*\nfind the blocker\nin pg_locks", "sub"),
         ("a5", 1420, 470, 125, 100, "ERROR /\nrestarts\nread the error\n(topic 12)", "sub"),
         ("a6", 1555, 470, 135, 100, "CPU / IO:*\nslow apply:\nindexes, RI FULL,\nhuge txn (07/11)", "sub"),
         # notes
-        ("note", 20, 620, 760, 150, "Read the LSNs carefully\nsent_lsn = walsender READ position: G2 includes changes still in the\nreorder buffer (up to logical_decoding_work_mem; 64 MB seen in backlog runs).\nwrite_lsn = received, replay_lsn = applied; equal when nothing is pending,\nso write - replay is not an apply-lag measure. A blocked apply worker sends\nno feedback: on the publisher network and apply look alike; use received_lsn.", "plain"),
+        ("note", 20, 620, 760, 150, "Read the LSNs carefully\nsent_lsn = walsender READ position: G2 includes changes still in the\nreorder buffer (up to logical_decoding_work_mem).\nwrite_lsn = received, replay_lsn = applied; equal when nothing is pending,\nso write - replay is not an apply-lag measure. A blocked apply worker sends\nno feedback: on the publisher network and apply look alike; use received_lsn.", "plain"),
         ("b1", 820, 640, 200, 40, "CREATE SUBSCRIPTION hangs", "slot"),
         ("b1a", 820, 710, 200, 60, "Old open transaction;\nslot creation waits\n(topic 06, 03)", "sub"),
         ("b2", 1040, 640, 200, 40, "Table stuck in 'd' or 'i'", "slot"),

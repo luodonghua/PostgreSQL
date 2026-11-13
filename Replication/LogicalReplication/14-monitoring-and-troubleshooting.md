@@ -193,9 +193,8 @@ Rules that matter when reading these numbers (checked in `walsender.c` / `worker
 
 - For a logical walsender, **`sent_lsn` is the WAL *read* position**
   (`sentPtr = reader->EndRecPtr`), not "bytes put on the wire". So G1 is purely read/decode
-  lag. G2 also contains decoded changes that have not been sent yet. In both backlog runs,
-  `sent − write` climbed to exactly **64 MB = `logical_decoding_work_mem`** and stayed there
-  while the subscriber was mostly idle. Don't read a G2 of up to `logical_decoding_work_mem` as a network problem.
+  lag. G2 also contains decoded changes not yet sent, up to `logical_decoding_work_mem`,
+  so don't read a G2 of that size as a network problem.
 - The apply worker reports **`write_lsn` = received, `flush_lsn` = applied and locally
   flushed, `replay_lsn` = applied**. With no transaction in progress, all three are set to
   the received position, so on the publisher `write_lsn − replay_lsn` is ~0 most of the time.
@@ -205,26 +204,21 @@ Rules that matter when reading these numbers (checked in `walsender.c` / `worker
   a slow network. The publisher alone **can't tell network from apply**. The subscriber's
   `received_lsn` and its apply worker's wait event can.
 - Sample both sides together, several times. Readings taken on two servers a moment apart
-  can make G2 slightly negative (seen: −1 MB).
+  can make G2 slightly negative.
 
-### Measured signatures (18.6, induced on purpose)
+### Signatures of each bottleneck
 
-Each run sampled the walsender and the apply worker about 8 times a second. The
-percentages are the share of samples per wait event (`CPU` = `wait_event` is NULL, i.e.
-running).
+Sample several times and look at the **dominant** wait event (`CPU` means `wait_event`
+is NULL, i.e. running).
 
-| Cause (how it was induced) | G1 `cur − sent` | G2 `sent − received` | Walsender | Apply worker |
+| Cause | G1 `cur − sent` | G2 `sent − received` | Walsender | Apply worker |
 |---|---|---|---|---|
-| **WAL read slow**: 323 MB backlog, WAL evicted from page cache, publisher reads capped at 3 MB/s (`systemd-run -p IOReadBandwidthMax`) | Large; shrinks at **2–3 MB/s**, the cap (322 → 264 MB in 21 s) | grows slowly to 64 MB | **`IO:WalRead` 73 %**, CPU 27 % | `LogicalApplyMain` 83 % (idle, waiting for data) |
-| **Decoding slow**: same 323 MB backlog, no I/O cap | Large; shrinks ~6 MB/s (318 → 130 MB in 30 s) | sits at 64 MB | **CPU 94 %**, `WalRead` 6 % | `LogicalApplyMain` 54 %, CPU 43 % |
-| **Spill**: one 1.5 M-row transaction, `logical_decoding_work_mem = 64kB`, `streaming = off` | Small (≤ 5 MB): reading keeps up | 0–6 MB (keepalives only; with `streaming = off` a transaction is sent at commit) | CPU 47 %, **`IO:ReorderBufferWrite` 26 %**, `IO:ReorderBufferRead` 3 % | `LogicalApplyMain` 91 % |
-| **Network slow**: TCP proxy limiting publisher → subscriber to 2 MB/s | grows (up to 68 MB) | **6–14 MB and moving**: `received_lsn` advances at the link rate | **`Client:WalSenderWriteData` 78 %** | **`LogicalApplyMain` 63 %** (idle), CPU 34 % |
-| **Apply blocked**: subscriber table held `ACCESS EXCLUSIVE` | grows (4 → 87 MB), then the walsender stops reading | **frozen at 5501 kB**: `received_lsn` stops | **`Client:WalSenderWriteData` 96 %** | **`Lock:relation` 97 %** |
-| Heavy writes to an **unpublished** table (3 M rows) | small (≤ 6 MB) at this rate | ~0 | CPU 48 %, `WalSenderWaitForWal` 43 % | idle |
-
-The spill run reported `spill_txns=1 spill_count=7773 spill_bytes=486 MB` in
-`pg_stat_replication_slots`. `pg_stat_io` (`backend_type = 'walsender'`, `object = 'wal'`)
-gave inconsistent read counts across these runs, so it is not used here.
+| **WAL read slow** (storage I/O, cold backlog) | large; drains at the storage read rate | ≤ `logical_decoding_work_mem` | mostly `IO:WalRead` | idle (`LogicalApplyMain`) |
+| **Decoding slow** (CPU-bound) | large | ≤ `logical_decoding_work_mem` | mostly `CPU` | idle |
+| **Large transaction spilling** | small (reading keeps up) | small; nothing applied until commit unless streaming | `IO:ReorderBufferWrite` / `ReorderBufferRead`; `spill_*` rising | idle |
+| **Network slow** | grows | larger than `logical_decoding_work_mem`, **`received_lsn` advancing** | mostly `Client:WalSenderWriteData` | **idle** (`LogicalApplyMain`) |
+| **Apply slow / blocked** | grows (the walsender stops reading once its socket is full) | **`received_lsn` frozen** | mostly `Client:WalSenderWriteData` | `Lock:*`, `CPU` or `IO:*` |
+| Heavy writes to **unpublished** tables | grows only if decoding can't keep up | ~0 | `CPU` | idle |
 
 Commands to sample both sides:
 
