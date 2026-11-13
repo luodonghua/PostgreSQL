@@ -239,37 +239,52 @@ def _():
 
 
 # --------------------------------------------------------------------------
-@diagram("troubleshooting-tree", (1600, 800))
+@diagram("troubleshooting-tree", (1700, 800))
 def _():
     nodes = [
-        ("root", 600, 20, 320, 50, "Subscriber is behind / not changing", "slot"),
-        ("q1", 600, 120, 320, 50, "Publisher: is the slot active?\n(pg_replication_slots.active)", "proc"),
-        ("q2", 160, 240, 330, 50, "Subscriber: is the subscription enabled?\n(pg_subscription.subenabled)", "proc"),
-        ("q3", 980, 240, 320, 50, "Is replay_lsn advancing?\n(sample twice)", "proc"),
-        ("a1", 20, 370, 250, 80, "disable_on_error was hit\nread the subscriber log,\nfix the cause, then ENABLE", "sub"),
-        ("a2", 330, 370, 290, 80, "Worker not running\nlog shows connection errors:\npg_hba, password, network,\nmax_wal_senders, slots in use", "sub"),
-        ("a3", 790, 370, 240, 80, "Just slow\ncompare apply speed with\nthe publisher write rate\n(topic 11)", "sub"),
-        ("q4", 1140, 370, 330, 50, "Subscriber: what is the apply\nworker doing? (pg_stat_activity)", "proc"),
-        ("a7", 860, 520, 180, 90, "Idle (LogicalApplyMain)\nbut sent > replay:\nnetwork or\nwal_sender_timeout", "sub"),
-        ("a4", 1060, 520, 190, 90, "wait_event = Lock\nfind the blocker in\npg_locks, resolve it", "sub"),
-        ("a5", 1270, 520, 170, 90, "Restarting / ERROR\nread the error\n(topic 12 table)", "sub"),
-        ("a6", 1460, 520, 130, 90, "100 % CPU on one\nhuge transaction:\nwait; streaming\n(topic 07, 11)", "sub"),
-        ("b1", 20, 650, 230, 40, "CREATE SUBSCRIPTION hangs", "slot"),
-        ("b1a", 20, 720, 230, 60, "Old open transaction on the\npublisher; slot creation\nwaits (topic 06)", "sub"),
-        ("b2", 290, 650, 230, 40, "Table stuck in 'd' or 'i'", "slot"),
-        ("b2a", 290, 720, 230, 60, "Topic 10 'What goes wrong':\nworker limits, copy errors,\ntablesync slot waiting", "sub"),
-        ("b3", 560, 650, 230, 40, "Publisher disk filling", "slot"),
-        ("b3a", 560, 720, 230, 60, "Find the inactive / lagging\nslot; fix the subscriber or\ndrop it (topic 05)", "sub"),
-        ("b4", 830, 650, 230, 40, "Rows differ between sides", "slot"),
-        ("b4a", 830, 720, 230, 60, "confl_* counters, log (12);\ncompare checksums, then\nrepair or re-sync a table", "sub"),
+        ("root", 690, 20, 320, 44, "Subscriber is behind / not changing", "slot"),
+        ("q1", 690, 100, 320, 50, "Publisher: is the slot active?\n(pg_replication_slots.active)", "proc"),
+        # slot not active
+        ("q2", 20, 200, 330, 50, "Subscriber: subscription enabled?\n(pg_subscription.subenabled)", "proc"),
+        ("a1", 20, 320, 160, 90, "disabled\ndisable_on_error hit:\nread the log, fix,\nENABLE", "sub"),
+        ("a2", 195, 320, 175, 90, "enabled, no worker\nconnection errors:\npg_hba, password, TLS,\nslots/senders in use", "sub"),
+        # slot active: measure gaps
+        ("L", 640, 200, 420, 60, "Measure the LSN gaps on BOTH sides (sample twice)\nG1 = cur_lsn - sent_lsn   G2 = sent_lsn - sub.received_lsn\nG3 = received_lsn frozen?", "wal"),
+        ("g1", 400, 330, 300, 60, "G1 large / growing\nwalsender behind reading WAL\n-> walsender wait event", "proc"),
+        ("g0", 720, 330, 230, 60, "G1 small, nothing applied,\nspill_* / stream_* rising", "proc"),
+        ("g2", 970, 330, 300, 60, "G2 > logical_decoding_work_mem\nreceived_lsn advancing\nwalsender WalSenderWriteData", "proc"),
+        ("g3", 1300, 330, 330, 60, "received_lsn frozen\nwalsender WalSenderWriteData\n-> apply worker wait event", "proc"),
+        # G1 leaves
+        ("r1", 220, 470, 175, 100, "IO:WalRead\nWAL read slow:\nstorage IOPS / MB/s,\ncold backlog\n(measured 73 %)", "sub"),
+        ("r2", 410, 470, 175, 100, "CPU (NULL)\ndecoding CPU-bound:\nbacklog, unpublished\ntraffic, RI FULL\n(measured 94 %)", "sub"),
+        ("r3", 600, 470, 190, 100, "IO:ReorderBuffer\nWrite / Read\nbig txns spilling:\nlogical_decoding_work_mem,\nstreaming (topic 07)", "sub"),
+        # G0 leaf
+        ("r0", 810, 470, 160, 100, "Large txn not yet\ncommitted / sent\n(streaming off):\nwait, or enable\nstreaming", "sub"),
+        # G2 leaf
+        ("n1", 990, 470, 260, 100, "Network slow\napply worker idle\n(LogicalApplyMain)\nbandwidth, latency, TCP\n(measured 78 % / 63 %)", "sub"),
+        # G3 leaves
+        ("a4", 1270, 470, 140, 100, "Lock:*\nfind the blocker\nin pg_locks\n(measured 97 %)", "sub"),
+        ("a5", 1420, 470, 125, 100, "ERROR /\nrestarts\nread the error\n(topic 12)", "sub"),
+        ("a6", 1555, 470, 135, 100, "CPU / IO:*\nslow apply:\nindexes, RI FULL,\nhuge txn (07/11)", "sub"),
+        # notes
+        ("note", 20, 620, 760, 150, "Read the LSNs carefully\nsent_lsn = walsender READ position: G2 includes changes still in the\nreorder buffer (up to logical_decoding_work_mem; 64 MB seen in backlog runs).\nwrite_lsn = received, replay_lsn = applied; equal when nothing is pending,\nso write - replay is not an apply-lag measure. A blocked apply worker sends\nno feedback: on the publisher network and apply look alike; use received_lsn.", "plain"),
+        ("b1", 820, 640, 200, 40, "CREATE SUBSCRIPTION hangs", "slot"),
+        ("b1a", 820, 710, 200, 60, "Old open transaction;\nslot creation waits\n(topic 06, 03)", "sub"),
+        ("b2", 1040, 640, 200, 40, "Table stuck in 'd' or 'i'", "slot"),
+        ("b2a", 1040, 710, 200, 60, "Topic 10: worker limits,\ncopy errors, sync slot\nwaiting for open txn", "sub"),
+        ("b3", 1260, 640, 200, 40, "Publisher disk filling", "slot"),
+        ("b3a", 1260, 710, 200, 60, "Inactive / lagging slot:\nfix subscriber or drop it\n(topic 05)", "sub"),
+        ("b4", 1480, 640, 200, 40, "Rows differ", "slot"),
+        ("b4a", 1480, 710, 200, 60, "confl_* counters (12);\nchecksums; repair or\nre-sync one table (10)", "sub"),
     ]
     edges = [
         ("root", "q1", "", False),
-        ("q1", "q2", "NO", False), ("q1", "q3", "YES", False),
-        ("q2", "a1", "disabled", False), ("q2", "a2", "enabled", False),
-        ("q3", "a3", "YES", False), ("q3", "q4", "NO", False),
-        ("q4", "a7", "Idle", False), ("q4", "a4", "Lock", False),
-        ("q4", "a5", "Error", False), ("q4", "a6", "CPU", False),
+        ("q1", "q2", "NO", False), ("q1", "L", "YES", False),
+        ("q2", "a1", "", False), ("q2", "a2", "", False),
+        ("L", "g1", "", False), ("L", "g0", "", False), ("L", "g2", "", False), ("L", "g3", "", False),
+        ("g1", "r1", "", False), ("g1", "r2", "", False), ("g1", "r3", "", False),
+        ("g0", "r0", "", False), ("g2", "n1", "", False),
+        ("g3", "a4", "", False), ("g3", "a5", "", False), ("g3", "a6", "", False),
         ("b1", "b1a", "", False), ("b2", "b2a", "", False), ("b3", "b3a", "", False), ("b4", "b4a", "", False),
     ]
     return nodes, edges

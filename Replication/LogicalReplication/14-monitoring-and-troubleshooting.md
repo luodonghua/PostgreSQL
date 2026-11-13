@@ -178,6 +178,74 @@ WHERE srsubstate <> 'r';        -- anything not ready, for a long time, is stuck
 Also watch the **subscriber**: a logical subscriber's own autovacuum health,
 bloat, and replication slot for *its* standbys.
 
+## Where is the lag? Split it by LSN, then read the wait events
+
+A logical stream has three stages, and each has its own LSN gap. Measure the gaps
+**first**, then use the wait event of the process that owns the growing gap.
+
+| Gap | Formula | Where | Owner |
+|---|---|---|---|
+| **G1 read/decode** | `pg_current_wal_lsn() - sent_lsn` | publisher `pg_stat_replication` | walsender: reading WAL, decoding, reorder buffer |
+| **G2 in flight** | publisher `sent_lsn` − subscriber `received_lsn` | both sides (`pg_stat_subscription`, leader row) | network / TCP buffers, *plus* changes buffered in the reorder buffer (see below) |
+| **G3 apply** | subscriber `received_lsn` frozen while data waits | subscriber `pg_stat_subscription` + apply worker wait event | apply worker |
+
+Rules that matter when reading these numbers (checked in `walsender.c` / `worker.c`, 18):
+
+- For a logical walsender, **`sent_lsn` is the WAL *read* position**
+  (`sentPtr = reader->EndRecPtr`), not "bytes put on the wire". So G1 is purely read/decode
+  lag. G2 also contains decoded changes that have not been sent yet. In both backlog runs,
+  `sent − write` climbed to exactly **64 MB = `logical_decoding_work_mem`** and stayed there
+  while the subscriber was mostly idle. Don't read a G2 of up to `logical_decoding_work_mem` as a network problem.
+- The apply worker reports **`write_lsn` = received, `flush_lsn` = applied and locally
+  flushed, `replay_lsn` = applied**. With no transaction in progress, all three are set to
+  the received position, so on the publisher `write_lsn − replay_lsn` is ~0 most of the time.
+  It is **not** an apply-lag measure.
+- A blocked apply worker **stops sending feedback**, so on the publisher every column freezes.
+  The walsender's socket then fills, and it waits in `WalSenderWriteData`, just as it does on
+  a slow network. The publisher alone **can't tell network from apply**. The subscriber's
+  `received_lsn` and its apply worker's wait event can.
+- Sample both sides together, several times. Readings taken on two servers a moment apart
+  can make G2 slightly negative (seen: −1 MB).
+
+### Measured signatures (18.6, induced on purpose)
+
+Each run sampled the walsender and the apply worker about 8 times a second. The
+percentages are the share of samples per wait event (`CPU` = `wait_event` is NULL, i.e.
+running).
+
+| Cause (how it was induced) | G1 `cur − sent` | G2 `sent − received` | Walsender | Apply worker |
+|---|---|---|---|---|
+| **WAL read slow**: 323 MB backlog, WAL evicted from page cache, publisher reads capped at 3 MB/s (`systemd-run -p IOReadBandwidthMax`) | Large; shrinks at **2–3 MB/s**, the cap (322 → 264 MB in 21 s) | grows slowly to 64 MB | **`IO:WalRead` 73 %**, CPU 27 % | `LogicalApplyMain` 83 % (idle, waiting for data) |
+| **Decoding slow**: same 323 MB backlog, no I/O cap | Large; shrinks ~6 MB/s (318 → 130 MB in 30 s) | sits at 64 MB | **CPU 94 %**, `WalRead` 6 % | `LogicalApplyMain` 54 %, CPU 43 % |
+| **Spill**: one 1.5 M-row transaction, `logical_decoding_work_mem = 64kB`, `streaming = off` | Small (≤ 5 MB): reading keeps up | 0–6 MB (keepalives only; with `streaming = off` a transaction is sent at commit) | CPU 47 %, **`IO:ReorderBufferWrite` 26 %**, `IO:ReorderBufferRead` 3 % | `LogicalApplyMain` 91 % |
+| **Network slow**: TCP proxy limiting publisher → subscriber to 2 MB/s | grows (up to 68 MB) | **6–14 MB and moving**: `received_lsn` advances at the link rate | **`Client:WalSenderWriteData` 78 %** | **`LogicalApplyMain` 63 %** (idle), CPU 34 % |
+| **Apply blocked**: subscriber table held `ACCESS EXCLUSIVE` | grows (4 → 87 MB), then the walsender stops reading | **frozen at 5501 kB**: `received_lsn` stops | **`Client:WalSenderWriteData` 96 %** | **`Lock:relation` 97 %** |
+| Heavy writes to an **unpublished** table (3 M rows) | small (≤ 6 MB) at this rate | ~0 | CPU 48 %, `WalSenderWaitForWal` 43 % | idle |
+
+The spill run reported `spill_txns=1 spill_count=7773 spill_bytes=486 MB` in
+`pg_stat_replication_slots`. `pg_stat_io` (`backend_type = 'walsender'`, `object = 'wal'`)
+gave inconsistent read counts across these runs, so it is not used here.
+
+Commands to sample both sides:
+
+```sql
+-- publisher
+SELECT application_name, sent_lsn,
+       pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), sent_lsn)) AS g1_read_decode,
+       pg_size_pretty(pg_wal_lsn_diff(sent_lsn, write_lsn))           AS sent_minus_acked
+FROM pg_stat_replication;
+SELECT pid, wait_event_type, wait_event, state FROM pg_stat_activity
+WHERE backend_type = 'walsender';
+SELECT slot_name, spill_txns, spill_bytes, stream_txns FROM pg_stat_replication_slots;
+
+-- subscriber (leader apply worker row: relid IS NULL AND leader_pid IS NULL)
+SELECT subname, received_lsn, latest_end_lsn, last_msg_receipt_time
+FROM pg_stat_subscription WHERE relid IS NULL AND leader_pid IS NULL;
+-- G2 = pg_wal_lsn_diff('<publisher sent_lsn>', received_lsn)
+SELECT pid, wait_event_type, wait_event FROM pg_stat_activity
+WHERE backend_type = 'logical replication apply worker';
+```
+
 ## Troubleshooting decision tree
 
 ![troubleshooting decision tree](diagrams/troubleshooting-tree.svg)
@@ -193,14 +261,30 @@ Subscriber is behind / not changing
 │   │        ├─ disabled ─ disable_on_error hit?  read the subscriber log; fix; ENABLE
 │   │        └─ enabled  ─ worker not running: check log for connection errors
 │   │                       (pg_hba, password, network, max_wal_senders, "all replication slots in use")
-│   └─ YES ─ is replay_lsn advancing? (run twice)
-│       ├─ YES ─ just slow: compare apply speed vs publisher write rate (topic 11)
-│       └─ NO  ─ subscriber: apply worker state (pg_stat_activity)
-│            ├─ wait_event Lock → find the blocker (pg_locks) and resolve it
-│            ├─ repeated restarts / ERROR in log → read the error (topic 12 table)
-│            ├─ running 100 % CPU on one huge transaction → wait, check streaming option (topic 07/11)
-│            └─ idle (LogicalApplyMain) but publisher shows sent_lsn > replay_lsn
-│                 → network issue or wal_sender_timeout; check walsender log
+│   └─ YES ─ measure the gaps on BOTH sides (sample twice)
+│       │
+│       ├─ G1 = cur_lsn − sent_lsn large/growing → walsender is behind reading → its wait event:
+│       │    ├─ IO:WalRead dominant          → WAL read slow: storage I/O, cold backlog (check IOPS/throughput)
+│       │    ├─ CPU (NULL) dominant          → decoding CPU-bound: big backlog, heavy unpublished
+│       │    │                                 traffic, REPLICA IDENTITY FULL; split publications / slots
+│       │    ├─ IO:ReorderBufferWrite/Read   → big transactions spilling: spill_* counters;
+│       │    │                                 raise logical_decoding_work_mem, streaming = parallel (topic 07)
+│       │    └─ Client:WalSenderWriteData    → it can't send: continue with G2/G3 below
+│       │
+│       ├─ G1 small, subscriber gets nothing, spill_*/stream_* rising
+│       │    → one large transaction not committed yet (no streaming): wait, or enable streaming
+│       │
+│       ├─ G2 = sent_lsn − sub.received_lsn > logical_decoding_work_mem, received_lsn advancing,
+│       │  walsender WalSenderWriteData, apply worker idle (LogicalApplyMain)
+│       │    → network slow: bandwidth/latency/TCP windows, cross-region link
+│       │
+│       └─ received_lsn frozen, walsender WalSenderWriteData → apply worker wait event:
+│            ├─ Lock:*          → find the blocker (pg_locks) and resolve it
+│            ├─ restarting / ERROR in log → read the error (topic 12 table)
+│            ├─ CPU / IO:*      → slow apply: indexes, REPLICA IDENTITY FULL w/o index,
+│            │                    one huge transaction (topic 07/11)
+│            └─ LogicalApplyMain (idle) but nothing arrives → connection stuck;
+│                 wal_sender_timeout / wal_receiver_timeout; walsender log
 │
 New subscription hangs at CREATE SUBSCRIPTION
 └─ publisher has an old open transaction (slot creation waits)  → topic 06
@@ -243,16 +327,11 @@ Rows differ between sides
    the subscriber, re-add it, then `REFRESH` again. The full procedure (tested with writers
    running) is in [topic 10, "Re-syncing one table"](10-initial-sync-tablesync.md#re-syncing-one-table-of-a-subscription).
 
-**If the subscription was created with `copy_data = false`** (tested on 18.6, empty
-subscriber tables): every table went straight to `r` with no tablesync worker. The
-publisher's 100 existing rows in `t1` **never arrived**; only the rows inserted afterwards
-did (subscriber `count = 1`). Nothing reports this, because no counter counts rows that
-were never copied. Later `UPDATE`/`DELETE`s of those old rows show up only as
-`update_missing`/`delete_missing` conflicts. `copy_data` is **not stored** in
-`pg_subscription` (there is no such column). It is an option of each command, so the
-re-sync procedure above still copies: `REFRESH PUBLICATION` defaults to `copy_data = true`
-whatever `CREATE SUBSCRIPTION` used. Tested: re-syncing `t3` in that subscription
-copied all rows, and the checksum matched the publisher.
+**If the subscription was created with `copy_data = false`**, every table goes straight to
+`r` and the publisher's existing rows never arrive; only later changes do. Nothing reports
+this. Later `UPDATE`/`DELETE`s of the missing rows surface only as
+`update_missing`/`delete_missing` conflicts. Repair each table with the re-sync procedure,
+which copies regardless of how the subscription was created.
 
 ## A one-shot health query (publisher)
 

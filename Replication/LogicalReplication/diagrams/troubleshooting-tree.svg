@@ -1,99 +1,140 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 800" width="1600" height="800" font-family="Helvetica,Arial,sans-serif" font-size="12">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1700 800" width="1700" height="800" font-family="Helvetica,Arial,sans-serif" font-size="12">
 <defs><marker id="a" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#333"/></marker></defs>
-<rect width="1600" height="800" fill="white"/>
-<line x1="760" y1="70" x2="760" y2="120" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
-<line x1="669" y1="170" x2="416" y2="240" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
-<text x="542" y="201" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">NO</text>
-<line x1="839" y1="170" x2="1061" y2="240" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
-<text x="950" y="201" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">YES</text>
-<line x1="294" y1="290" x2="195" y2="370" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
-<text x="244" y="326" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">disabled</text>
-<line x1="351" y1="290" x2="434" y2="370" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
-<text x="392" y="326" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">enabled</text>
-<line x1="1100" y1="290" x2="973" y2="370" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
-<text x="1037" y="326" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">YES</text>
-<line x1="1172" y1="290" x2="1273" y2="370" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
-<text x="1222" y="326" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">NO</text>
-<line x1="1253" y1="420" x2="1040" y2="522" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
-<text x="1146" y="467" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">Idle</text>
-<line x1="1283" y1="420" x2="1195" y2="520" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
-<text x="1239" y="466" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">Lock</text>
-<line x1="1312" y1="420" x2="1342" y2="520" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
-<text x="1327" y="466" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">Error</text>
-<line x1="1337" y1="420" x2="1467" y2="520" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
-<text x="1402" y="466" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">CPU</text>
-<line x1="135" y1="690" x2="135" y2="720" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
-<line x1="405" y1="690" x2="405" y2="720" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
-<line x1="675" y1="690" x2="675" y2="720" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
-<line x1="945" y1="690" x2="945" y2="720" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
-<rect x="600" y="20" width="320" height="50" rx="8" fill="#f8cecc" stroke="#b85450"/>
-<text x="760.0" y="49" text-anchor="middle">Subscriber is behind / not changing</text>
-<rect x="600" y="120" width="320" height="50" rx="8" fill="#e1d5e7" stroke="#9673a6"/>
-<text x="760.0" y="141" text-anchor="middle" font-weight="bold">Publisher: is the slot active?</text>
-<text x="760.0" y="157" text-anchor="middle">(pg_replication_slots.active)</text>
-<rect x="160" y="240" width="330" height="50" rx="8" fill="#e1d5e7" stroke="#9673a6"/>
-<text x="325.0" y="261" text-anchor="middle" font-weight="bold">Subscriber: is the subscription enabled?</text>
-<text x="325.0" y="277" text-anchor="middle">(pg_subscription.subenabled)</text>
-<rect x="980" y="240" width="320" height="50" rx="8" fill="#e1d5e7" stroke="#9673a6"/>
-<text x="1140.0" y="261" text-anchor="middle" font-weight="bold">Is replay_lsn advancing?</text>
-<text x="1140.0" y="277" text-anchor="middle">(sample twice)</text>
-<rect x="20" y="370" width="250" height="80" rx="8" fill="#d5e8d4" stroke="#82b366"/>
-<text x="145.0" y="398" text-anchor="middle" font-weight="bold">disable_on_error was hit</text>
-<text x="145.0" y="414" text-anchor="middle">read the subscriber log,</text>
-<text x="145.0" y="430" text-anchor="middle">fix the cause, then ENABLE</text>
-<rect x="330" y="370" width="290" height="80" rx="8" fill="#d5e8d4" stroke="#82b366"/>
-<text x="475.0" y="390" text-anchor="middle" font-weight="bold">Worker not running</text>
-<text x="475.0" y="406" text-anchor="middle">log shows connection errors:</text>
-<text x="475.0" y="422" text-anchor="middle">pg_hba, password, network,</text>
-<text x="475.0" y="438" text-anchor="middle">max_wal_senders, slots in use</text>
-<rect x="790" y="370" width="240" height="80" rx="8" fill="#d5e8d4" stroke="#82b366"/>
-<text x="910.0" y="390" text-anchor="middle" font-weight="bold">Just slow</text>
-<text x="910.0" y="406" text-anchor="middle">compare apply speed with</text>
-<text x="910.0" y="422" text-anchor="middle">the publisher write rate</text>
-<text x="910.0" y="438" text-anchor="middle">(topic 11)</text>
-<rect x="1140" y="370" width="330" height="50" rx="8" fill="#e1d5e7" stroke="#9673a6"/>
-<text x="1305.0" y="391" text-anchor="middle" font-weight="bold">Subscriber: what is the apply</text>
-<text x="1305.0" y="407" text-anchor="middle">worker doing? (pg_stat_activity)</text>
-<rect x="860" y="520" width="180" height="90" rx="8" fill="#d5e8d4" stroke="#82b366"/>
-<text x="950.0" y="545" text-anchor="middle" font-weight="bold">Idle (LogicalApplyMain)</text>
-<text x="950.0" y="561" text-anchor="middle">but sent &gt; replay:</text>
-<text x="950.0" y="577" text-anchor="middle">network or</text>
-<text x="950.0" y="593" text-anchor="middle">wal_sender_timeout</text>
-<rect x="1060" y="520" width="190" height="90" rx="8" fill="#d5e8d4" stroke="#82b366"/>
-<text x="1155.0" y="553" text-anchor="middle" font-weight="bold">wait_event = Lock</text>
-<text x="1155.0" y="569" text-anchor="middle">find the blocker in</text>
-<text x="1155.0" y="585" text-anchor="middle">pg_locks, resolve it</text>
-<rect x="1270" y="520" width="170" height="90" rx="8" fill="#d5e8d4" stroke="#82b366"/>
-<text x="1355.0" y="553" text-anchor="middle" font-weight="bold">Restarting / ERROR</text>
-<text x="1355.0" y="569" text-anchor="middle">read the error</text>
-<text x="1355.0" y="585" text-anchor="middle">(topic 12 table)</text>
-<rect x="1460" y="520" width="130" height="90" rx="8" fill="#d5e8d4" stroke="#82b366"/>
-<text x="1525.0" y="545" text-anchor="middle" font-weight="bold">100 % CPU on one</text>
-<text x="1525.0" y="561" text-anchor="middle">huge transaction:</text>
-<text x="1525.0" y="577" text-anchor="middle">wait; streaming</text>
-<text x="1525.0" y="593" text-anchor="middle">(topic 07, 11)</text>
-<rect x="20" y="650" width="230" height="40" rx="8" fill="#f8cecc" stroke="#b85450"/>
-<text x="135.0" y="674" text-anchor="middle">CREATE SUBSCRIPTION hangs</text>
-<rect x="20" y="720" width="230" height="60" rx="8" fill="#d5e8d4" stroke="#82b366"/>
-<text x="135.0" y="738" text-anchor="middle" font-weight="bold">Old open transaction on the</text>
-<text x="135.0" y="754" text-anchor="middle">publisher; slot creation</text>
-<text x="135.0" y="770" text-anchor="middle">waits (topic 06)</text>
-<rect x="290" y="650" width="230" height="40" rx="8" fill="#f8cecc" stroke="#b85450"/>
-<text x="405.0" y="674" text-anchor="middle">Table stuck in 'd' or 'i'</text>
-<rect x="290" y="720" width="230" height="60" rx="8" fill="#d5e8d4" stroke="#82b366"/>
-<text x="405.0" y="738" text-anchor="middle" font-weight="bold">Topic 10 'What goes wrong':</text>
-<text x="405.0" y="754" text-anchor="middle">worker limits, copy errors,</text>
-<text x="405.0" y="770" text-anchor="middle">tablesync slot waiting</text>
-<rect x="560" y="650" width="230" height="40" rx="8" fill="#f8cecc" stroke="#b85450"/>
-<text x="675.0" y="674" text-anchor="middle">Publisher disk filling</text>
-<rect x="560" y="720" width="230" height="60" rx="8" fill="#d5e8d4" stroke="#82b366"/>
-<text x="675.0" y="738" text-anchor="middle" font-weight="bold">Find the inactive / lagging</text>
-<text x="675.0" y="754" text-anchor="middle">slot; fix the subscriber or</text>
-<text x="675.0" y="770" text-anchor="middle">drop it (topic 05)</text>
-<rect x="830" y="650" width="230" height="40" rx="8" fill="#f8cecc" stroke="#b85450"/>
-<text x="945.0" y="674" text-anchor="middle">Rows differ between sides</text>
-<rect x="830" y="720" width="230" height="60" rx="8" fill="#d5e8d4" stroke="#82b366"/>
-<text x="945.0" y="738" text-anchor="middle" font-weight="bold">confl_* counters, log (12);</text>
-<text x="945.0" y="754" text-anchor="middle">compare checksums, then</text>
-<text x="945.0" y="770" text-anchor="middle">repair or re-sync a table</text>
+<rect width="1700" height="800" fill="white"/>
+<line x1="850" y1="64" x2="850" y2="100" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="690" y1="149" x2="350" y2="200" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="520" y="171" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">NO</text>
+<line x1="850" y1="150" x2="850" y2="200" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="850" y="171" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">YES</text>
+<line x1="170" y1="250" x2="127" y2="320" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="202" y1="250" x2="251" y2="320" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="781" y1="260" x2="619" y2="330" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="847" y1="260" x2="838" y2="330" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="912" y1="260" x2="1058" y2="330" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="992" y1="260" x2="1323" y2="330" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="505" y1="390" x2="383" y2="470" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="540" y1="390" x2="514" y2="470" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="577" y1="390" x2="650" y2="470" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="845" y1="390" x2="873" y2="470" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="1120" y1="390" x2="1120" y2="470" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="1442" y1="390" x2="1379" y2="470" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="1468" y1="390" x2="1477" y2="470" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="1495" y1="390" x2="1573" y2="470" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="920" y1="680" x2="920" y2="710" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="1140" y1="680" x2="1140" y2="710" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="1360" y1="680" x2="1360" y2="710" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="1580" y1="680" x2="1580" y2="710" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<rect x="690" y="20" width="320" height="44" rx="8" fill="#f8cecc" stroke="#b85450"/>
+<text x="850.0" y="46" text-anchor="middle">Subscriber is behind / not changing</text>
+<rect x="690" y="100" width="320" height="50" rx="8" fill="#e1d5e7" stroke="#9673a6"/>
+<text x="850.0" y="121" text-anchor="middle" font-weight="bold">Publisher: is the slot active?</text>
+<text x="850.0" y="137" text-anchor="middle">(pg_replication_slots.active)</text>
+<rect x="20" y="200" width="330" height="50" rx="8" fill="#e1d5e7" stroke="#9673a6"/>
+<text x="185.0" y="221" text-anchor="middle" font-weight="bold">Subscriber: subscription enabled?</text>
+<text x="185.0" y="237" text-anchor="middle">(pg_subscription.subenabled)</text>
+<rect x="20" y="320" width="160" height="90" rx="8" fill="#d5e8d4" stroke="#82b366"/>
+<text x="100.0" y="345" text-anchor="middle" font-weight="bold">disabled</text>
+<text x="100.0" y="361" text-anchor="middle">disable_on_error hit:</text>
+<text x="100.0" y="377" text-anchor="middle">read the log, fix,</text>
+<text x="100.0" y="393" text-anchor="middle">ENABLE</text>
+<rect x="195" y="320" width="175" height="90" rx="8" fill="#d5e8d4" stroke="#82b366"/>
+<text x="282.5" y="345" text-anchor="middle" font-weight="bold">enabled, no worker</text>
+<text x="282.5" y="361" text-anchor="middle">connection errors:</text>
+<text x="282.5" y="377" text-anchor="middle">pg_hba, password, TLS,</text>
+<text x="282.5" y="393" text-anchor="middle">slots/senders in use</text>
+<rect x="640" y="200" width="420" height="60" rx="8" fill="#fff2cc" stroke="#d6b656"/>
+<text x="850.0" y="218" text-anchor="middle" font-weight="bold">Measure the LSN gaps on BOTH sides (sample twice)</text>
+<text x="850.0" y="234" text-anchor="middle">G1 = cur_lsn - sent_lsn   G2 = sent_lsn - sub.received_lsn</text>
+<text x="850.0" y="250" text-anchor="middle">G3 = received_lsn frozen?</text>
+<rect x="400" y="330" width="300" height="60" rx="8" fill="#e1d5e7" stroke="#9673a6"/>
+<text x="550.0" y="348" text-anchor="middle" font-weight="bold">G1 large / growing</text>
+<text x="550.0" y="364" text-anchor="middle">walsender behind reading WAL</text>
+<text x="550.0" y="380" text-anchor="middle">-&gt; walsender wait event</text>
+<rect x="720" y="330" width="230" height="60" rx="8" fill="#e1d5e7" stroke="#9673a6"/>
+<text x="835.0" y="356" text-anchor="middle" font-weight="bold">G1 small, nothing applied,</text>
+<text x="835.0" y="372" text-anchor="middle">spill_* / stream_* rising</text>
+<rect x="970" y="330" width="300" height="60" rx="8" fill="#e1d5e7" stroke="#9673a6"/>
+<text x="1120.0" y="348" text-anchor="middle" font-weight="bold">G2 &gt; logical_decoding_work_mem</text>
+<text x="1120.0" y="364" text-anchor="middle">received_lsn advancing</text>
+<text x="1120.0" y="380" text-anchor="middle">walsender WalSenderWriteData</text>
+<rect x="1300" y="330" width="330" height="60" rx="8" fill="#e1d5e7" stroke="#9673a6"/>
+<text x="1465.0" y="348" text-anchor="middle" font-weight="bold">received_lsn frozen</text>
+<text x="1465.0" y="364" text-anchor="middle">walsender WalSenderWriteData</text>
+<text x="1465.0" y="380" text-anchor="middle">-&gt; apply worker wait event</text>
+<rect x="220" y="470" width="175" height="100" rx="8" fill="#d5e8d4" stroke="#82b366"/>
+<text x="307.5" y="492" text-anchor="middle" font-weight="bold">IO:WalRead</text>
+<text x="307.5" y="508" text-anchor="middle">WAL read slow:</text>
+<text x="307.5" y="524" text-anchor="middle">storage IOPS / MB/s,</text>
+<text x="307.5" y="540" text-anchor="middle">cold backlog</text>
+<text x="307.5" y="556" text-anchor="middle">(measured 73 %)</text>
+<rect x="410" y="470" width="175" height="100" rx="8" fill="#d5e8d4" stroke="#82b366"/>
+<text x="497.5" y="492" text-anchor="middle" font-weight="bold">CPU (NULL)</text>
+<text x="497.5" y="508" text-anchor="middle">decoding CPU-bound:</text>
+<text x="497.5" y="524" text-anchor="middle">backlog, unpublished</text>
+<text x="497.5" y="540" text-anchor="middle">traffic, RI FULL</text>
+<text x="497.5" y="556" text-anchor="middle">(measured 94 %)</text>
+<rect x="600" y="470" width="190" height="100" rx="8" fill="#d5e8d4" stroke="#82b366"/>
+<text x="695.0" y="492" text-anchor="middle" font-weight="bold">IO:ReorderBuffer</text>
+<text x="695.0" y="508" text-anchor="middle">Write / Read</text>
+<text x="695.0" y="524" text-anchor="middle">big txns spilling:</text>
+<text x="695.0" y="540" text-anchor="middle">logical_decoding_work_mem,</text>
+<text x="695.0" y="556" text-anchor="middle">streaming (topic 07)</text>
+<rect x="810" y="470" width="160" height="100" rx="8" fill="#d5e8d4" stroke="#82b366"/>
+<text x="890.0" y="492" text-anchor="middle" font-weight="bold">Large txn not yet</text>
+<text x="890.0" y="508" text-anchor="middle">committed / sent</text>
+<text x="890.0" y="524" text-anchor="middle">(streaming off):</text>
+<text x="890.0" y="540" text-anchor="middle">wait, or enable</text>
+<text x="890.0" y="556" text-anchor="middle">streaming</text>
+<rect x="990" y="470" width="260" height="100" rx="8" fill="#d5e8d4" stroke="#82b366"/>
+<text x="1120.0" y="492" text-anchor="middle" font-weight="bold">Network slow</text>
+<text x="1120.0" y="508" text-anchor="middle">apply worker idle</text>
+<text x="1120.0" y="524" text-anchor="middle">(LogicalApplyMain)</text>
+<text x="1120.0" y="540" text-anchor="middle">bandwidth, latency, TCP</text>
+<text x="1120.0" y="556" text-anchor="middle">(measured 78 % / 63 %)</text>
+<rect x="1270" y="470" width="140" height="100" rx="8" fill="#d5e8d4" stroke="#82b366"/>
+<text x="1340.0" y="500" text-anchor="middle" font-weight="bold">Lock:*</text>
+<text x="1340.0" y="516" text-anchor="middle">find the blocker</text>
+<text x="1340.0" y="532" text-anchor="middle">in pg_locks</text>
+<text x="1340.0" y="548" text-anchor="middle">(measured 97 %)</text>
+<rect x="1420" y="470" width="125" height="100" rx="8" fill="#d5e8d4" stroke="#82b366"/>
+<text x="1482.5" y="500" text-anchor="middle" font-weight="bold">ERROR /</text>
+<text x="1482.5" y="516" text-anchor="middle">restarts</text>
+<text x="1482.5" y="532" text-anchor="middle">read the error</text>
+<text x="1482.5" y="548" text-anchor="middle">(topic 12)</text>
+<rect x="1555" y="470" width="135" height="100" rx="8" fill="#d5e8d4" stroke="#82b366"/>
+<text x="1622.5" y="500" text-anchor="middle" font-weight="bold">CPU / IO:*</text>
+<text x="1622.5" y="516" text-anchor="middle">slow apply:</text>
+<text x="1622.5" y="532" text-anchor="middle">indexes, RI FULL,</text>
+<text x="1622.5" y="548" text-anchor="middle">huge txn (07/11)</text>
+<rect x="20" y="620" width="760" height="150" rx="8" fill="#f5f5f5" stroke="#666666"/>
+<text x="400.0" y="659" text-anchor="middle" font-weight="bold">Read the LSNs carefully</text>
+<text x="400.0" y="675" text-anchor="middle">sent_lsn = walsender READ position: G2 includes changes still in the</text>
+<text x="400.0" y="691" text-anchor="middle">reorder buffer (up to logical_decoding_work_mem; 64 MB seen in backlog runs).</text>
+<text x="400.0" y="707" text-anchor="middle">write_lsn = received, replay_lsn = applied; equal when nothing is pending,</text>
+<text x="400.0" y="723" text-anchor="middle">so write - replay is not an apply-lag measure. A blocked apply worker sends</text>
+<text x="400.0" y="739" text-anchor="middle">no feedback: on the publisher network and apply look alike; use received_lsn.</text>
+<rect x="820" y="640" width="200" height="40" rx="8" fill="#f8cecc" stroke="#b85450"/>
+<text x="920.0" y="664" text-anchor="middle">CREATE SUBSCRIPTION hangs</text>
+<rect x="820" y="710" width="200" height="60" rx="8" fill="#d5e8d4" stroke="#82b366"/>
+<text x="920.0" y="728" text-anchor="middle" font-weight="bold">Old open transaction;</text>
+<text x="920.0" y="744" text-anchor="middle">slot creation waits</text>
+<text x="920.0" y="760" text-anchor="middle">(topic 06, 03)</text>
+<rect x="1040" y="640" width="200" height="40" rx="8" fill="#f8cecc" stroke="#b85450"/>
+<text x="1140.0" y="664" text-anchor="middle">Table stuck in 'd' or 'i'</text>
+<rect x="1040" y="710" width="200" height="60" rx="8" fill="#d5e8d4" stroke="#82b366"/>
+<text x="1140.0" y="728" text-anchor="middle" font-weight="bold">Topic 10: worker limits,</text>
+<text x="1140.0" y="744" text-anchor="middle">copy errors, sync slot</text>
+<text x="1140.0" y="760" text-anchor="middle">waiting for open txn</text>
+<rect x="1260" y="640" width="200" height="40" rx="8" fill="#f8cecc" stroke="#b85450"/>
+<text x="1360.0" y="664" text-anchor="middle">Publisher disk filling</text>
+<rect x="1260" y="710" width="200" height="60" rx="8" fill="#d5e8d4" stroke="#82b366"/>
+<text x="1360.0" y="728" text-anchor="middle" font-weight="bold">Inactive / lagging slot:</text>
+<text x="1360.0" y="744" text-anchor="middle">fix subscriber or drop it</text>
+<text x="1360.0" y="760" text-anchor="middle">(topic 05)</text>
+<rect x="1480" y="640" width="200" height="40" rx="8" fill="#f8cecc" stroke="#b85450"/>
+<text x="1580.0" y="664" text-anchor="middle">Rows differ</text>
+<rect x="1480" y="710" width="200" height="60" rx="8" fill="#d5e8d4" stroke="#82b366"/>
+<text x="1580.0" y="728" text-anchor="middle" font-weight="bold">confl_* counters (12);</text>
+<text x="1580.0" y="744" text-anchor="middle">checksums; repair or</text>
+<text x="1580.0" y="760" text-anchor="middle">re-sync one table (10)</text>
 </svg>

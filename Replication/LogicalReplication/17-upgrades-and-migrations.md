@@ -54,29 +54,17 @@ Old cluster (v N)  ──logical replication──►  New cluster (v N+k)
       -- run the output on new (add a safety margin if you can't fully quiesce)
       ```
 
-      What `pg_sequences.last_value` really is (tested on 18.6):
-
-      | Test | Result |
-      |---|---|
-      | `CACHE 50`. Session A calls `nextval` 3 times (gets 1, 2, 3) and stays connected | `last_value = 50`, the end of A's cached block, not 3 |
-      | Another session calls `nextval` | Gets **51**; `last_value` becomes **100** |
-      | Session A calls `nextval` again | Gets **4** from its cache |
-      | `setval('sq', 100)` on the new cluster, then `nextval` | **101** |
-      | Role without privileges on the sequence reads `pg_sequences` | `last_value` is **NULL** |
-      | Sequence never used | `last_value` is NULL |
-
-      So the statement is **correct for any `CACHE` size**, not only `CACHE 1`. `last_value`
-      is the highest value *allocated* to any session's cache, which is ≥ every value
-      actually used. A cache larger than 1 only leaves a gap (here 4–50 are never used on
-      the new side), never a duplicate. That holds if writers are really stopped: a
-      session still connected to *old* could keep handing out 4–50 from its cache. The
-      two real traps, plus one note:
-      - **`WHERE last_value IS NOT NULL` silently skips sequences you can't read.** Run it as
-        an owner or admin, and compare the row count with `SELECT count(*) FROM pg_sequences`.
-      - **Quoting.** With `%L` of `schema||'.'||name`, a sequence `"MySeq"` produced
-        `setval('public.MySeq', 1)`, which failed with `relation "public.myseq" does not exist`.
-        With `quote_ident` it produced `setval('public."MySeq"', 1)`, which worked (tested).
-      - For descending sequences (`increment < 0`), apply the safety margin downwards.
+      This is correct for **any `CACHE` size**, not only `CACHE 1`. `pg_sequences.last_value`
+      is the highest value *allocated* to any session's cache. That is ≥ every value
+      actually handed out. With `CACHE 50` it read 50 after a session had used only 1–3.
+      So a cache leaves a gap on the new side, never a duplicate, provided no session on
+      *old* keeps using its cached values. Watch for:
+      - **Unreadable sequences are skipped.** `last_value` is NULL for sequences the role
+        can't read (and for never-used ones), so `WHERE last_value IS NOT NULL` silently
+        skips them. Run it as owner or admin, and compare with `SELECT count(*) FROM pg_sequences`.
+      - **Quoting.** Use `quote_ident`. Without it, `"MySeq"` becomes `setval('public.MySeq', …)`,
+        which fails with `relation "public.myseq" does not exist`.
+      - **Descending sequences** (`increment < 0`): apply the safety margin downwards.
    4. `DROP SUBSCRIPTION` on new (drops the slot on old).
    5. Point the app at new. Re-enable writers.
 9. **Rollback plan**: before step 8.5 set up the reverse stream (below) so old

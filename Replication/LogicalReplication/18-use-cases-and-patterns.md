@@ -18,7 +18,7 @@ subscriptions (split/merge) is in [topic 03](03-subscriptions.md#moving-a-table-
 | **Cache/search invalidation** | PG → worker | `pg_recvlogical` or logical messages | At-least-once delivery → idempotent consumers |
 | **Audit / event capture** | PG → log | `pg_logical_emit_message`, `test_decoding` | Not a security audit log |
 | **Bidirectional / active-active (limited)** | A ⇄ B | `origin = none`, disjoint keys | [17](17-upgrades-and-migrations.md), [12](12-conflicts-and-error-handling.md) |
-| **Blue/green deployments** | Blue → green | Logical replication under the hood on managed services | [Topic 20 §9](20-amazon-rds-and-aurora.md#9-bluegreen-deployments) |
+| **Blue/green deployments** | Blue → green | Logical replication under the hood on managed services | [Topic 20 §10](20-amazon-rds-and-aurora.md#10-bluegreen-deployments) |
 | **Online table rewrite / repartition** | Same cluster or new cluster | Different subscriber layout | Cut-over per table |
 
 ## 2. CDC with external consumers (Debezium and friends)

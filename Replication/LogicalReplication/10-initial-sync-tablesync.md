@@ -115,56 +115,46 @@ horizon, so dead rows in *unpublished* tables can't be vacuumed until the copy e
 ## Re-syncing one table of a subscription
 
 Situation: a subscription has 10 tables and only one (`t3`) has diverged. There is no
-`ALTER SUBSCRIPTION … RESYNC TABLE`. You take the table out and put it back, and the other
-nine keep streaming the whole time. Both variants were tested on 18.6. A loop kept writing
-to `t3` (and `t1`) on the publisher, and the result was checked with
-`count(*), sum(hashtext(t::text))` on both sides.
+per-table resync command, and `copy_data` can't be switched on for an existing subscription:
+- `copy_data` is not a stored subscription property, so `ALTER SUBSCRIPTION … SET (copy_data = …)`
+  is rejected.
+- `REFRESH PUBLICATION WITH (copy_data = true)` copies only tables that are **new** to the
+  subscription, never the ones it already tracks.
 
-### Variant A — let PostgreSQL copy it (`copy_data = true`, the default)
+So you take the table out and put it back. The other nine tables keep streaming meanwhile.
+
+### Variant A: let PostgreSQL copy it (recommended)
 
 ```sql
 -- publisher
 ALTER PUBLICATION p DROP TABLE t3;
--- subscriber: removes t3 from pg_subscription_rel; the apply worker now ignores t3
+-- subscriber: t3 leaves pg_subscription_rel; the apply worker now ignores it
 ALTER SUBSCRIPTION s REFRESH PUBLICATION;
-TRUNCATE t3;                                -- mandatory, see below
+TRUNCATE t3;                                -- mandatory
 -- publisher
 ALTER PUBLICATION p ADD TABLE t3;
--- subscriber: t3 goes i → d → r with a fresh snapshot copy
+-- subscriber: t3 is new again → i → d → r with a fresh snapshot copy
 ALTER SUBSCRIPTION s REFRESH PUBLICATION;   -- copy_data defaults to true
 ```
 
-Result with writers running throughout: `t3` publisher `1138 | -38435363202`,
-subscriber `1138 | -38435363202`; `apply_error_count = sync_error_count = 0`. One
-`table synchronization worker … "t3" has started/finished` pair in the log.
-
-- **No quiesce needed.** Changes to `t3` between `DROP` and `ADD` are not streamed, but the
-  copy snapshot is taken after the `ADD` and so contains them. Changes after the snapshot
-  come from the temporary slot (see the procedure above).
-- **`TRUNCATE` first.** PostgreSQL never merges. If rows are left in place, a table with a PK
-  loops on `duplicate key value violates unique constraint`, and a table without a key gets
-  duplicated rows ("What goes wrong" above). If other subscriber tables have FKs to `t3`,
-  `TRUNCATE` needs `CASCADE` or the FKs dropped; plan for that (not tested here).
-- `copy_data` belongs to the command, not the subscription, so this works even if the
-  subscription was created with `copy_data = false`.
-- Not possible with `two_phase = true` (`REFRESH` with copy is rejected; [topic 03](03-subscriptions.md)).
+- **No need to stop writers.** Changes between `DROP` and `ADD` are not streamed, but the
+  copy snapshot is taken after the `ADD` and includes them (verified with writers running:
+  the data matched).
+- **`TRUNCATE` first.** PostgreSQL never merges. With rows left in place, a table with a PK
+  loops on `duplicate key` and a table without one gets duplicates ("What goes wrong" above).
+  If other subscriber tables have FKs to `t3`, `TRUNCATE` needs `CASCADE` or the FKs dropped.
+- Works even if the subscription was created with `copy_data = false`.
+- Not possible with `two_phase = true` ([topic 03](03-subscriptions.md)).
 - Readers on the subscriber see an empty or partly loaded `t3` until it is `r`.
 
-### Variant B — load it yourself (`copy_data = false`)
+### Variant B: load it yourself (`copy_data = false`)
 
-Same steps, but between the two `REFRESH`es you load the table yourself (here
-`COPY t3 TO STDOUT | COPY t3 FROM STDIN`), and the second `REFRESH` uses
-`WITH (copy_data = false)`.
-
-| Run | Publisher `t3` | Subscriber `t3` |
-|---|---|---|
-| Writers **running** during the reload | 1200 rows | **1196 rows**: 4 rows lost, checksum differs |
-| Writers **paused** from `DROP` until the `ADD` commits | 1060 rows | 1060 rows, checksum equal |
-
-`copy_data = false` gives you no snapshot that lines up with the stream. Writes that commit
-after your `COPY` started but before the `ADD TABLE` committed are in neither. So use
-variant B only when you can stop writes to that one table for the duration, or when the
-data has already been reconciled some other way. Otherwise use variant A.
+Same steps, but you load `t3` yourself between the two `REFRESH`es (e.g.
+`COPY t3 TO STDOUT | COPY t3 FROM STDIN`) and finish with
+`REFRESH PUBLICATION WITH (copy_data = false)`. Nothing lines your copy up with the stream:
+writes that commit after your copy's snapshot and before the `ADD TABLE` are lost (verified:
+4 rows lost with writers running; exact match with writers paused). Use it only when writes to
+that table can be stopped from `DROP` until the `ADD` commits. Otherwise use variant A.
 
 ## Diagnostics
 

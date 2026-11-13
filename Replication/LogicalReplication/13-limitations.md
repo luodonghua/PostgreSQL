@@ -46,19 +46,12 @@ Verified in the decoder: `ALTER TABLE` never appears in the stream
 - Subtractive (drop column/table): **publisher first**, then subscriber.
 - Rename: coordinate; treat as drop+add or pause the subscription:
   `DISABLE` → rename both → `ENABLE`.
-- Rename **with re-copy** (no need to pause, tested on 18.6): rename on the
-  publisher; the apply worker then stalls with `target relation "public.b2" does not
-  exist` (other tables in the subscription stall too, because it is one apply stream).
-  On the subscriber `DROP TABLE b` (this also removes its `pg_subscription_rel` row),
-  `CREATE TABLE b2 (…)`, then `ALTER SUBSCRIPTION s REFRESH PUBLICATION` (copy_data
-  defaults to true). Result: `b2` went `d → r`, it held the rows from before the
-  rename, the row inserted *after* the rename and the row inserted between the rename
-  and the REFRESH, and the stalled changes for the other table were applied.
-  No row was lost or doubled. The rename-time insert sat in the stalled stream, and
-  the apply worker skips changes for a table not yet `r`, so the copy alone supplied it.
-  The cost is a full copy of that table, plus a stall for every table in the
-  subscription between the rename and the REFRESH. Use `DISABLE` → rename both →
-  `ENABLE` when the table is large.
+- Rename **with a re-copy** (no pause needed): rename on the publisher. The whole
+  subscription then stalls on `target relation "public.b2" does not exist`. On the
+  subscriber, `DROP TABLE b`, `CREATE TABLE b2 (…)` and `ALTER SUBSCRIPTION s REFRESH
+  PUBLICATION`. `b2` is copied fresh, so nothing is lost or doubled (verified), and the
+  stalled tables catch up. The cost is a full copy of the table plus a stall of the whole
+  subscription until the `REFRESH`. For large tables prefer `DISABLE` → rename both → `ENABLE`.
 - Type widening (`int → bigint`): subscriber first. Narrowing: refuse, or
   publisher first after verifying all values fit.
 
@@ -161,7 +154,7 @@ type prints, it works; otherwise the apply worker errors at that row.
 | Slots don't follow failover | Until PG17 failover slots ([topic 16](16-failover-and-ha.md)) |
 | Two-phase | `two_phase` can only be changed under restrictions; `REFRESH` with copy blocked |
 | Triggers | Don't fire on the subscriber for replicated rows unless `ENABLE REPLICA`/`ALWAYS` |
-| Superuser operations | `FOR ALL TABLES`/`TABLES IN SCHEMA` need superuser; origin functions are superuser-only by default; `SKIP` needed superuser only on PG15 (owner on 16+). On RDS/Aurora `rds_superuser` covers all of them (tested on RDS 18.6, [12](12-conflicts-and-error-handling.md)) |
+| Superuser operations | `FOR ALL TABLES`/`TABLES IN SCHEMA` need superuser; origin functions are superuser-only by default; `SKIP` needed superuser only on PG15 (owner on 16+). On RDS/Aurora `rds_superuser` covers all of them ([20 §1](20-amazon-rds-and-aurora.md#privileges-without-a-superuser)) |
 | Publisher version | ≥ 10; the subscriber can be any later version; older subscribers than the publisher are best-effort |
 
 ## 8. Things people expect that do not exist (GA)

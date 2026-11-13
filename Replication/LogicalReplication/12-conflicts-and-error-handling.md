@@ -105,8 +105,8 @@ while disabled, so alert on it.
 | Option | When to use | How | Risk |
 |---|---|---|---|
 | **A. Fix the data, let it retry** | Local row is stale/wrong | Delete or correct the conflicting subscriber row; `ENABLE` if disabled | None; loses nothing. Tested: after `DELETE FROM c WHERE id=1` and `ALTER SUBSCRIPTION s ENABLE`, the remote row `(1,'remote')` and the following `(2,'after')` both arrived |
-| **B. `ALTER SUBSCRIPTION … SKIP (lsn = …)`** | The remote transaction should be discarded | Take the LSN from the error CONTEXT (`finished at 0/…`). PG15 required superuser; from PG16 the **subscription owner** may run it (the PG15 `must be superuser to skip transaction` check is gone from `subscriptioncmds.c` on 16+). Works on RDS/Aurora, see below | Whole remote transaction is dropped → permanent divergence. See [topic 03](03-subscriptions.md) |
-| **C. `pg_replication_origin_advance`** | Skip several transactions / older versions | `SELECT pg_replication_origin_advance('pg_<subid>', '0/…')` after disabling. In community PostgreSQL the origin functions are executable only by superuser by default (`proacl => '{POSTGRES=X}'` in `pg_proc.dat`) | Easy to overshoot; manual |
+| **B. `ALTER SUBSCRIPTION … SKIP (lsn = …)`** | The remote transaction should be discarded | Take the LSN from the error CONTEXT (`finished at 0/…`). PG15 required superuser; from PG16 the **subscription owner** may run it. Works on RDS/Aurora (below) | Whole remote transaction is dropped → permanent divergence. See [topic 03](03-subscriptions.md) |
+| **C. `pg_replication_origin_advance`** | Skip several transactions / older versions | `SELECT pg_replication_origin_advance('pg_<subid>', '0/…')` after disabling. The origin functions are superuser-only by default | Easy to overshoot; manual |
 | **D. Drop & recreate subscription** | Divergence too large to patch | New subscription with `copy_data` after truncating | Full re-copy |
 
 Always find *why* it conflicted before skipping (a second writer? a
@@ -114,20 +114,11 @@ half-done migration?).
 
 ### On Amazon RDS / Aurora PostgreSQL (no superuser)
 
-Tested on RDS for PostgreSQL 18.6 as the master user (`rolsuper = f`, member of
-`rds_superuser`, `rds_replication` and `pg_create_subscription`), on a subscription it owns:
-
-| Command | Result |
-|---|---|
-| `ALTER SUBSCRIPTION s2 SKIP (lsn = '0/1000000')` | Succeeded; `pg_subscription.subskiplsn = 0/1000000` |
-| `ALTER SUBSCRIPTION s2 SKIP (lsn = NONE)` | Clears it (`NONE` is a keyword value of `lsn`; `SKIP (NONE)` is a syntax error) |
-| `pg_replication_origin_advance('pg_<subid>', '0/2000000')` | Succeeded; RDS grants the origin functions to the admin role |
-| `pg_replication_origin_create` / `_session_setup` | Succeeded |
-
-So options B and C both work on RDS. Aurora PostgreSQL uses the same `rds_superuser` model;
-I did not repeat the test there. SKIP only works for the **owner** of the subscription, so a
-subscription created by another role needs `ALTER SUBSCRIPTION … OWNER TO` first, or must be
-run as that role.
+Options B and C both work for members of `rds_superuser`, such as the master user. RDS
+grants the replication-origin functions to that role. `SKIP` must be run by the
+subscription's **owner**: `ALTER SUBSCRIPTION … OWNER TO` first if needed. Clear a pending
+skip with `SKIP (lsn = NONE)`. Details in
+[topic 20 §1](20-amazon-rds-and-aurora.md#privileges-without-a-superuser).
 
 ## How to avoid conflicts (design, not tooling)
 
