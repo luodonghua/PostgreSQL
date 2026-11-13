@@ -107,7 +107,10 @@ CREATE PUBLICATION app_pub FOR TABLE customers, orders, audit_log;
 
 ## 5. Create the same schema on the subscriber
 
-Logical replication does not copy DDL, so the target tables must exist first:
+Logical replication does not copy DDL, so the target tables must exist first. This
+lab uses `--no-owner --no-privileges` because the subscriber has none of the
+publisher's roles. For real systems create the roles first and keep owners and grants
+([15 §4](15-best-practices.md#day-0)):
 
 ```bash
 pg_dump -h 127.0.0.1 -p 5433 -d postgres \
@@ -277,4 +280,4 @@ Then `lab_down`.
 Conflict handling → [12](12-conflicts-and-error-handling.md). Failover →
 [16](16-failover-and-ha.md). Major-version upgrade recipe →
 [17](17-upgrades-and-migrations.md). Managed services (RDS/Aurora) →
-[18](18-use-cases-and-patterns.md).
+[20](20-amazon-rds-and-aurora.md).

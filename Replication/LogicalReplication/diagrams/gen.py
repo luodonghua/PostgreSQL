@@ -239,6 +239,43 @@ def _():
 
 
 # --------------------------------------------------------------------------
+@diagram("troubleshooting-tree", (1600, 800))
+def _():
+    nodes = [
+        ("root", 600, 20, 320, 50, "Subscriber is behind / not changing", "slot"),
+        ("q1", 600, 120, 320, 50, "Publisher: is the slot active?\n(pg_replication_slots.active)", "proc"),
+        ("q2", 160, 240, 330, 50, "Subscriber: is the subscription enabled?\n(pg_subscription.subenabled)", "proc"),
+        ("q3", 980, 240, 320, 50, "Is replay_lsn advancing?\n(sample twice)", "proc"),
+        ("a1", 20, 370, 250, 80, "disable_on_error was hit\nread the subscriber log,\nfix the cause, then ENABLE", "sub"),
+        ("a2", 330, 370, 290, 80, "Worker not running\nlog shows connection errors:\npg_hba, password, network,\nmax_wal_senders, slots in use", "sub"),
+        ("a3", 790, 370, 240, 80, "Just slow\ncompare apply speed with\nthe publisher write rate\n(topic 11)", "sub"),
+        ("q4", 1140, 370, 330, 50, "Subscriber: what is the apply\nworker doing? (pg_stat_activity)", "proc"),
+        ("a7", 860, 520, 180, 90, "Idle (LogicalApplyMain)\nbut sent > replay:\nnetwork or\nwal_sender_timeout", "sub"),
+        ("a4", 1060, 520, 190, 90, "wait_event = Lock\nfind the blocker in\npg_locks, resolve it", "sub"),
+        ("a5", 1270, 520, 170, 90, "Restarting / ERROR\nread the error\n(topic 12 table)", "sub"),
+        ("a6", 1460, 520, 130, 90, "100 % CPU on one\nhuge transaction:\nwait; streaming\n(topic 07, 11)", "sub"),
+        ("b1", 20, 650, 230, 40, "CREATE SUBSCRIPTION hangs", "slot"),
+        ("b1a", 20, 720, 230, 60, "Old open transaction on the\npublisher; slot creation\nwaits (topic 06)", "sub"),
+        ("b2", 290, 650, 230, 40, "Table stuck in 'd' or 'i'", "slot"),
+        ("b2a", 290, 720, 230, 60, "Topic 10 'What goes wrong':\nworker limits, copy errors,\ntablesync slot waiting", "sub"),
+        ("b3", 560, 650, 230, 40, "Publisher disk filling", "slot"),
+        ("b3a", 560, 720, 230, 60, "Find the inactive / lagging\nslot; fix the subscriber or\ndrop it (topic 05)", "sub"),
+        ("b4", 830, 650, 230, 40, "Rows differ between sides", "slot"),
+        ("b4a", 830, 720, 230, 60, "confl_* counters, log (12);\ncompare checksums, then\nrepair or re-sync a table", "sub"),
+    ]
+    edges = [
+        ("root", "q1", "", False),
+        ("q1", "q2", "NO", False), ("q1", "q3", "YES", False),
+        ("q2", "a1", "disabled", False), ("q2", "a2", "enabled", False),
+        ("q3", "a3", "YES", False), ("q3", "q4", "NO", False),
+        ("q4", "a7", "Idle", False), ("q4", "a4", "Lock", False),
+        ("q4", "a5", "Error", False), ("q4", "a6", "CPU", False),
+        ("b1", "b1a", "", False), ("b2", "b2a", "", False), ("b3", "b3a", "", False), ("b4", "b4a", "", False),
+    ]
+    return nodes, edges
+
+
+# --------------------------------------------------------------------------
 if __name__ == "__main__":
     for name, (fn, size) in DIAGRAMS.items():
         nodes, edges = fn()

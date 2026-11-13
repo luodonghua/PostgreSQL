@@ -74,7 +74,9 @@ What to read from it:
 
 During the copy the **main slot keeps accumulating WAL** and its
 `catalog_xmin` holds back catalog vacuum on the publisher; for a multi-hour copy
-that is real WAL volume.
+that is real WAL volume. The copy's **snapshot** also holds the database-wide `xmin`
+horizon, so dead rows in *unpublished* tables can't be vacuumed until the copy ends
+(measured in [15 §4](15-best-practices.md#day-0)).
 
 ## Options that change the procedure
 
@@ -109,6 +111,60 @@ that is real WAL volume.
 | `ERROR: could not create replication slot "pg_…_sync_…": all replication slots are in use` | Peak slots exceeded | Raise `max_replication_slots`, lower sync workers |
 | Subscriber has the table but `COPY` ran into **existing rows** | You created the subscriber table with data and left `copy_data = true` | Verified 18.6: with a matching row in a table with a PK the sync worker loops on `ERROR: duplicate key value violates unique constraint "pre_pkey"` and the table stays in `d`; with a **no-key** table the copy silently **duplicated** the row (`nokey` ended with 2 rows). Truncate first, or `copy_data = false` after verifying equality. PostgreSQL never merges. |
 | Initial copy finishes, then apply errors on one table | Data type / constraint differences between sides | Fix, then it resumes from the same slot |
+
+## Re-syncing one table of a subscription
+
+Situation: a subscription has 10 tables and only one (`t3`) has diverged. There is no
+`ALTER SUBSCRIPTION … RESYNC TABLE`. You take the table out and put it back, and the other
+nine keep streaming the whole time. Both variants were tested on 18.6. A loop kept writing
+to `t3` (and `t1`) on the publisher, and the result was checked with
+`count(*), sum(hashtext(t::text))` on both sides.
+
+### Variant A — let PostgreSQL copy it (`copy_data = true`, the default)
+
+```sql
+-- publisher
+ALTER PUBLICATION p DROP TABLE t3;
+-- subscriber: removes t3 from pg_subscription_rel; the apply worker now ignores t3
+ALTER SUBSCRIPTION s REFRESH PUBLICATION;
+TRUNCATE t3;                                -- mandatory, see below
+-- publisher
+ALTER PUBLICATION p ADD TABLE t3;
+-- subscriber: t3 goes i → d → r with a fresh snapshot copy
+ALTER SUBSCRIPTION s REFRESH PUBLICATION;   -- copy_data defaults to true
+```
+
+Result with writers running throughout: `t3` publisher `1138 | -38435363202`,
+subscriber `1138 | -38435363202`; `apply_error_count = sync_error_count = 0`. One
+`table synchronization worker … "t3" has started/finished` pair in the log.
+
+- **No quiesce needed.** Changes to `t3` between `DROP` and `ADD` are not streamed, but the
+  copy snapshot is taken after the `ADD` and so contains them. Changes after the snapshot
+  come from the temporary slot (see the procedure above).
+- **`TRUNCATE` first.** PostgreSQL never merges. If rows are left in place, a table with a PK
+  loops on `duplicate key value violates unique constraint`, and a table without a key gets
+  duplicated rows ("What goes wrong" above). If other subscriber tables have FKs to `t3`,
+  `TRUNCATE` needs `CASCADE` or the FKs dropped; plan for that (not tested here).
+- `copy_data` belongs to the command, not the subscription, so this works even if the
+  subscription was created with `copy_data = false`.
+- Not possible with `two_phase = true` (`REFRESH` with copy is rejected; [topic 03](03-subscriptions.md)).
+- Readers on the subscriber see an empty or partly loaded `t3` until it is `r`.
+
+### Variant B — load it yourself (`copy_data = false`)
+
+Same steps, but between the two `REFRESH`es you load the table yourself (here
+`COPY t3 TO STDOUT | COPY t3 FROM STDIN`), and the second `REFRESH` uses
+`WITH (copy_data = false)`.
+
+| Run | Publisher `t3` | Subscriber `t3` |
+|---|---|---|
+| Writers **running** during the reload | 1200 rows | **1196 rows**: 4 rows lost, checksum differs |
+| Writers **paused** from `DROP` until the `ADD` commits | 1060 rows | 1060 rows, checksum equal |
+
+`copy_data = false` gives you no snapshot that lines up with the stream. Writes that commit
+after your `COPY` started but before the `ADD TABLE` committed are in neither. So use
+variant B only when you can stop writes to that one table for the duration, or when the
+data has already been reconciled some other way. Otherwise use variant A.
 
 ## Diagnostics
 

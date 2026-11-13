@@ -22,6 +22,11 @@ Rules worth knowing:
   Views, materialized views, foreign tables, sequences and large objects cannot.
 - `FOR ALL TABLES` and `FOR TABLES IN SCHEMA` need superuser; `FOR TABLE`
   needs ownership of the table plus `CREATE` on the database.
+  On **Amazon RDS / Aurora PostgreSQL** you have no superuser. Membership in
+  `rds_superuser` is enough for this. Tested on RDS for PostgreSQL 18.6: the master
+  user (`rolsuper = f`, member of `rds_superuser`) created all three kinds. An ordinary role
+  got `ERROR: must be rds_superuser to create FOR ALL TABLES publication` (and the same
+  for `FOR TABLES IN SCHEMA`), so RDS swaps the check rather than removing it.
 - You can mix forms in one publication (`ALTER PUBLICATION ... ADD TABLE`
   on a schema publication worked in my test).
 - A table can be in several publications; a subscription may subscribe to
@@ -220,7 +225,7 @@ new table ([topic 03](03-subscriptions.md)).
 |---|---|
 | Create publication | `CREATE` on the database |
 | `FOR TABLE` | owner of each table |
-| `FOR ALL TABLES` / `TABLES IN SCHEMA` | superuser |
+| `FOR ALL TABLES` / `TABLES IN SCHEMA` | superuser (RDS/Aurora: `rds_superuser`, tested on RDS 18.6) |
 | Subscriber connecting | role with `REPLICATION` (or superuser) **and** `SELECT` on published tables (for the initial copy) |
 
 ## Pitfalls checklist

@@ -114,6 +114,56 @@ states and ended in `r` with its pre-existing row copied:
 
 Without the `REFRESH`, inserts into `b` were *not* applied (count stayed 0 in my test).
 
+### Does a blocked copy of the new table stall the existing tables? (tested)
+
+No. Setup on 18.6: subscription `s` streaming table `a` (state `r`), then a session on the
+publisher opened a transaction that holds an xid and stayed idle. Then
+`ALTER PUBLICATION p ADD TABLE b` and `ALTER SUBSCRIPTION s REFRESH PUBLICATION`:
+
+```
+-- subscriber
+a | r
+b | d                                    <- tablesync worker started, waiting
+-- publisher walsenders
+6747 | active | Client | WalSenderWaitForWal | START_REPLICATION SLOT "s" …           <- main apply stream
+6766 | active | Lock   | transactionid       | CREATE_REPLICATION_SLOT "pg_16400_sync_16392_…"
+```
+
+While `b` waited, three inserts into `a` arrived on the subscriber at once (`count(a)` went
+1 → 4). When the open transaction ended, `b` went `d → r` with its pre-existing row.
+
+The details:
+
+- The tablesync worker is a **separate process with its own temporary slot**. Only that
+  slot's creation waits, for every transaction that holds an xid when it starts (a slot
+  needs a consistent snapshot). The apply worker keeps streaming the tables already in `r`.
+- The wait is **instance-wide**, not per schema or per database. A second run had the
+  published schema `s1`, an open transaction writing to schema `s2`, and another in a
+  **different database**. After the `s2` transaction was terminated, `s1.b` stayed in `d`.
+  It moved to `r` only when the other database's transaction ended too.
+- **A long block (100 s, longer than the 1 min `wal_sender_timeout` / `wal_receiver_timeout`)**
+  was sampled every 13 s while one row per sample was inserted into the already-replicating table:
+
+  ```
+  t+14s  s1.a pub/sub 1/1  sync walsender 13541 wait=transactionid 00:00:13  sync worker 13539
+  t+53s  s1.a pub/sub 4/4  sync walsender 13541 wait=transactionid 00:00:53  sync worker 13539
+  t+67s  s1.a pub/sub 5/5  sync walsender 13541 wait=transactionid 00:01:06  sync worker 13539
+  t+93s  s1.a pub/sub 7/7  sync walsender 13541 wait=transactionid 00:01:33  sync worker 13539
+  t+106s s1.a pub/sub 8/8  sync walsender none                                sync worker none
+  ```
+
+  The same sync worker and walsender PIDs waited for the whole time. Neither timeout fired
+  in this run, and there were no errors (`sync_error_count = 0`).
+  The existing table kept up at every sample. `b` finished copying a few seconds after the
+  blocker ended. Expect the wait to last as long as the longest open xid-holding transaction.
+- What it does cost: the blocked worker uses one of the
+  `max_sync_workers_per_subscription` slots, so other newly added tables queue behind it in `i`.
+  It also uses a replication slot and a walsender on the publisher. `b` gets no changes on the
+  subscriber until it is `r`. They are not lost: the copy snapshot is taken after the wait,
+  then the catch-up from the temp slot applies the rest.
+- Find the blocker on the publisher:
+  `SELECT pid, datname, xact_start, backend_xid FROM pg_stat_activity WHERE backend_xid IS NOT NULL ORDER BY xact_start;`
+
 ### Gotcha: `two_phase` blocks `REFRESH` with copy
 
 ```
@@ -150,6 +200,114 @@ After skipping, `subskiplsn` returns to `0/0`. `SKIP` throws away the **whole**
 remote transaction, so the tables diverge: use it only when you have decided
 the transaction's effects are not needed (or you applied them by hand).
 Prefer fixing the data so the retry succeeds ([topic 12](12-conflicts-and-error-handling.md)).
+
+## Moving a table between subscriptions without re-copying (split and merge)
+
+Use case: one subscription carries 10 tables and one of them (`t3`) is busy enough to slow
+the single apply worker. You want to move it to its own publication and subscription,
+`p2`/`s2`, without copying it again and without stopping the application. Later you may
+want to merge it back. Both directions were tested on 18.6 with a loop writing to `t3`
+the whole time. The writes were `INSERT` + `UPDATE` + `DELETE` for the merge test and
+`INSERT`s for the split test, and the writers were never paused. Each run was checked with
+`count(*), sum(hashtext(t3::text))` on both sides and with the conflict counters.
+
+### The rule that makes it work
+
+Decoding reads publication membership **as of each change's commit**, through the
+historic catalog snapshot. So if one publisher transaction moves the table from `p1` to
+`p2`, its commit LSN `X` is an exact switch point: changes committed before `X` go to
+`s1`'s slot, and changes after `X` go to `s2`'s slot. No change goes to both or to neither,
+on two conditions:
+
+1. **The receiving slot must already exist before `X`.** A slot only sees WAL from its own
+   creation point onwards.
+2. **The receiving subscription must already have the table in `pg_subscription_rel`
+   (state `r`) when the changes arrive.** If not, the apply worker drops them *silently*.
+
+A copied slot (`pg_copy_logical_replication_slot`) is **not** needed. Creating the new slot
+ahead of the switch is enough. I did not test the copy-slot variant.
+
+### Split: move `t3` from `p1`/`s` to a new `p2`/`s2`
+
+```sql
+-- publisher: empty publication + the new slot, created BEFORE the switch
+CREATE PUBLICATION p2;
+SELECT pg_create_logical_replication_slot('s2', 'pgoutput');
+
+-- publisher: the switch, in ONE transaction; note its LSN = X
+BEGIN;
+ALTER PUBLICATION p1 DROP TABLE t3;
+ALTER PUBLICATION p2 ADD TABLE t3;
+COMMIT;
+SELECT pg_current_wal_lsn();            -- X (just after the commit)
+
+-- subscriber: attach to the existing slot; t3 is in p2 now, so it is registered as 'r'
+CREATE SUBSCRIPTION s2 CONNECTION '…' PUBLICATION p2
+  WITH (create_slot = false, slot_name = 's2', copy_data = false, enabled = false);
+
+-- publisher: wait until the OLD subscription has applied everything up to X
+SELECT replay_lsn >= 'X' FROM pg_stat_replication WHERE application_name = 's';
+
+-- subscriber
+ALTER SUBSCRIPTION s  REFRESH PUBLICATION WITH (copy_data = false);   -- s forgets t3
+ALTER SUBSCRIPTION s2 ENABLE;                                         -- s2 streams t3 from X
+```
+
+| Run | Publisher `t3` | Subscriber `t3` | Errors / conflicts |
+|---|---|---|---|
+| **Pre-created slot** (above) | 1129, `-44335499338` | 1129, `-44335499338` | 0 |
+| Naive: `CREATE PUBLICATION p2 FOR TABLE t3` in the switch transaction, then `CREATE SUBSCRIPTION s2 … copy_data = false` (its slot created **after** `X`) | 1141 | **1139**, checksum differs | 0 — the loss is silent |
+
+Why each step is there (the two failure modes below are reasoned from how the apply worker
+filters tables; I did not reproduce them):
+
+- **`enabled = false` and the wait for `s` to pass `X`.** These keep the two apply workers
+  from touching `t3` at the same time. If `s2` applied an `UPDATE` committed after `X` before
+  `s` had applied the `INSERT` from before `X`, you would get an `update_missing` conflict.
+- **`REFRESH` on `s` after the wait.** Do it too early and `s` would silently skip `t3`
+  changes from before `X` that it has not applied yet.
+- **No application downtime.** Writers to `t3` and to the other nine tables ran
+  throughout.
+- **Cost: cross-table consistency.** After the split, a transaction that touches `t3` and
+  `t1` reaches the subscriber through two independent streams ([topic 13](13-limitations.md) §6).
+
+### Merge (reverse): move `t3` from `p2`/`s2` back into `p1`/`s`
+
+Here the receiving slot (`s`) already exists, so condition 1 holds. Condition 2 is the
+problem. `s` can only register `t3` with `REFRESH PUBLICATION`, which only sees tables that
+are already in `p1`. A plain `ADD TABLE` would send `t3` changes to both `s` and `s2` until
+the switch. The way out is a **row filter that matches nothing**, used as a placeholder:
+
+```sql
+-- publisher: t3 joins p1, but no row passes the filter yet
+ALTER PUBLICATION p1 ADD TABLE t3 WHERE (false);
+-- subscriber: s now tracks t3 ('r') without copying anything
+ALTER SUBSCRIPTION s REFRESH PUBLICATION WITH (copy_data = false);
+
+-- publisher: the switch, one transaction, LSN = X
+BEGIN;
+ALTER PUBLICATION p2 DROP TABLE t3;
+ALTER PUBLICATION p1 DROP TABLE t3;      -- remove the placeholder filter …
+ALTER PUBLICATION p1 ADD  TABLE t3;      -- … and re-add it unfiltered
+COMMIT;
+SELECT pg_current_wal_lsn();             -- X
+
+-- wait until s2 has applied up to X, then
+ALTER SUBSCRIPTION s2 REFRESH PUBLICATION WITH (copy_data = false);   -- s2 forgets t3
+-- when s2 carries nothing any more: DROP SUBSCRIPTION s2;  (drops its slot) and DROP PUBLICATION p2
+```
+
+Tested with the `INSERT`/`UPDATE`/`DELETE` writer running. The first move into `p2` used the
+same placeholder trick. After moving `t3` there and back: publisher `1000 | -64742994327`,
+subscriber `1000 | -64742994327`; `apply_error_count`, `confl_insert_exists`,
+`confl_update_missing` and `confl_delete_missing` were 0 for both subscriptions; the
+subscriber log had no `ERROR`. So **the row filter is only needed when the receiving
+subscription already exists** (merge, or a split into an existing subscription). For a
+split into a new subscription, `CREATE SUBSCRIPTION` registers `t3` itself, and the
+pre-created slot is all you need.
+
+To merge every table of `s2` into `s`, do the same with all of them in the placeholder step
+and in the single switch transaction, then drop `s2`.
 
 ## Dropping a subscription — mind the slot
 

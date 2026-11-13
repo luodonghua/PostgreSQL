@@ -180,6 +180,11 @@ bloat, and replication slot for *its* standbys.
 
 ## Troubleshooting decision tree
 
+![troubleshooting decision tree](diagrams/troubleshooting-tree.svg)
+
+Editable: [diagrams/troubleshooting-tree.drawio](diagrams/troubleshooting-tree.drawio)
+(regenerate with `python3 diagrams/gen.py`). The same tree as text:
+
 ```
 Subscriber is behind / not changing
 │
@@ -234,8 +239,20 @@ Rows differ between sides
 2. Cheap check: counts + `sum(hashtext(row::text))` per table ranges.
 3. Deep check: `pg_comparator`-style chunked checksums (external tool).
 4. Repair by `INSERT … ON CONFLICT` from a `postgres_fdw` view of the publisher,
-   or re-sync the one table (`DROP TABLE` out of the publication, `REFRESH`,
-   re-add, `REFRESH` with `copy_data`).
+   or re-sync the one table. Drop it from the publication and `REFRESH`, `TRUNCATE` it on
+   the subscriber, re-add it, then `REFRESH` again. The full procedure (tested with writers
+   running) is in [topic 10, "Re-syncing one table"](10-initial-sync-tablesync.md#re-syncing-one-table-of-a-subscription).
+
+**If the subscription was created with `copy_data = false`** (tested on 18.6, empty
+subscriber tables): every table went straight to `r` with no tablesync worker. The
+publisher's 100 existing rows in `t1` **never arrived**; only the rows inserted afterwards
+did (subscriber `count = 1`). Nothing reports this, because no counter counts rows that
+were never copied. Later `UPDATE`/`DELETE`s of those old rows show up only as
+`update_missing`/`delete_missing` conflicts. `copy_data` is **not stored** in
+`pg_subscription` (there is no such column). It is an option of each command, so the
+re-sync procedure above still copies: `REFRESH PUBLICATION` defaults to `copy_data = true`
+whatever `CREATE SUBSCRIPTION` used. Tested: re-syncing `t3` in that subscription
+copied all rows, and the checksum matched the publisher.
 
 ## A one-shot health query (publisher)
 

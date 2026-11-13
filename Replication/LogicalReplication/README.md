@@ -39,8 +39,9 @@ verified on 18.6 unless it says "(by source/doc only)".
 | 15 | L400 | Best practices | [15-best-practices.md](15-best-practices.md) |
 | 16 | L400 | Failover & HA | [16-failover-and-ha.md](16-failover-and-ha.md) |
 | 17 | L400 | Upgrades & migrations | [17-upgrades-and-migrations.md](17-upgrades-and-migrations.md) |
-| 18 | L400 | Use cases, patterns, RDS/Aurora (incl. **DR failover measured on AWS**) | [18-use-cases-and-patterns.md](18-use-cases-and-patterns.md) |
+| 18 | L400 | Use cases & patterns (native PostgreSQL) | [18-use-cases-and-patterns.md](18-use-cases-and-patterns.md) |
 | 19 | L400 | Source-code map | [19-source-code-map.md](19-source-code-map.md) |
+| 20 | L400 | Amazon RDS / Aurora: privileges, parameters, **DR failover measured on AWS** | [20-amazon-rds-and-aurora.md](20-amazon-rds-and-aurora.md) |
 
 Diagrams live in [diagrams/](diagrams/) as editable `.drawio` plus a rendered
 `.svg`; regenerate both with `python3 diagrams/gen.py`.

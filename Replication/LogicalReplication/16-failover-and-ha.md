@@ -186,7 +186,7 @@ decoding from the primary. Caveats from the docs/source:
 | Publisher HA (PG ≥ 17) | Physical standby + `failover=true` + `sync_replication_slots` + `synchronized_standby_slots` + stable endpoint |
 | Publisher HA (PG ≤ 16) | Patroni permanent logical slots, or `pg_failover_slots`; otherwise plan to re-create the subscription |
 | Zero data-loss on cut-over | Fence old primary; verify `confirmed_flush_lsn` ≤ new primary's replay; `synchronized_standby_slots` |
-| Managed (RDS/Aurora) | Measured results: [topic 18 §4.4](18-use-cases-and-patterns.md#44-what-happens-to-slots-and-subscriptions-on-failover-tested-on-aws). Aurora keeps logical slots through switchover and failover; RDS cross-region replica promotion does not |
+| Managed (RDS/Aurora) | Measured results: [topic 20 §4](20-amazon-rds-and-aurora.md#4-what-happens-to-slots-and-subscriptions-on-failover-tested-on-aws). Aurora keeps logical slots through switchover and failover; RDS cross-region replica promotion does not |
 | Subscriber HA | Physical standby for the subscriber |
 
 ## ⚠️ Non-GA notes

@@ -6,7 +6,7 @@ page for your engine version. Sources:
 [RDS for PostgreSQL read replicas](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_PostgreSQL.Replication.ReadReplicas.html),
 [Aurora replication](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Aurora.Replication.html).
 Content is paraphrased from those pages. Logical replication on RDS/Aurora is in
-[logical topic 18](../LogicalReplication/18-use-cases-and-patterns.md#4-amazon-rds-for-postgresql--aurora-postgresql).
+[logical topic 20](../LogicalReplication/20-amazon-rds-and-aurora.md).
 A hands-on conflict experiment on an RDS read replica already exists in this repo:
 [RDS replication lag on a read replica](../../RDS-PostgreSQL/replication-lag-on-read-replica.md).
 

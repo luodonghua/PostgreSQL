@@ -1,7 +1,7 @@
 # Replication
 
 Study notes on PostgreSQL replication, written for learning without reading the source or the official
-docs. All commands were run on a local **PostgreSQL 18.6**; anything newer than GA is marked ⚠️ non-GA. The AWS DR behaviour (Aurora Global Database switchover/failover, RDS promotion) was measured on real AWS resources — see [logical topic 18, section 4](LogicalReplication/18-use-cases-and-patterns.md#4-amazon-rds-for-postgresql--aurora-postgresql).
+docs. All commands were run on a local **PostgreSQL 18.6**; anything newer than GA is marked ⚠️ non-GA. The AWS DR behaviour (Aurora Global Database switchover/failover, RDS promotion) was measured on real AWS resources — see [logical topic 20](LogicalReplication/20-amazon-rds-and-aurora.md).
 
 | Folder | What it covers |
 |---|---|
