@@ -62,9 +62,38 @@ psql -v slot=app_sub -v publication=app_pub -f peek_pgoutput_simple.sql
 
 It assumes:
 - a **pgoutput** slot (native logical replication),
-- the slot is **not in use**: pause the subscription first (`ALTER SUBSCRIPTION <sub> DISABLE;` on the
-  subscriber, `ENABLE` afterwards). Application writes continue; the slot just keeps its WAL meanwhile,
+- the slot is **not in use**: either pause the subscription first (`ALTER SUBSCRIPTION <sub> DISABLE;` on the
+  subscriber, `ENABLE` afterwards), or, on PostgreSQL 12+, [peek a copy of the slot](#if-the-slot-is-in-use-copy-it-first-postgresql-12).
+  Application writes continue either way; the slot just keeps its WAL meanwhile,
 - a role with `REPLICATION` (RDS/Aurora: `rds_replication`); any PostgreSQL 10+.
+
+#### If the slot is in use: copy it first (PostgreSQL 12+)
+
+The simple scripts refuse a slot that has an active consumer. Instead of pausing the
+subscription, peek a copy. Copying doesn't touch the original or its consumer. Run on the
+publisher, in the slot's database:
+
+```sql
+-- 1. Copy the slot (keeps the pgoutput plugin; starts at the original's current position)
+SELECT pg_copy_logical_replication_slot('app_sub', 'app_sub_peek', false);   -- false = not temporary
+```
+
+```bash
+# 2. Run the script against the copy (use the copy's name in -v slot=, or in the params block of the IDE script)
+psql -v slot=app_sub_peek -v publication=app_pub -f peek_pgoutput_simple.sql
+```
+
+```sql
+-- 3. Drop the copy when done
+SELECT pg_drop_replication_slot('app_sub_peek');
+```
+
+- The copy must be **non-temporary** (`false`): a temporary slot is dropped when the copying
+  session ends, so it would be gone by the time the script runs in another session.
+- Drop the copy promptly. It retains WAL like any slot until dropped.
+- It needs one free replication slot (`max_replication_slots`) and the `REPLICATION` role.
+- The copy starts from the original's position at copy time, so it can still show changes the
+  consumer has applied since. If you need the current backlog, drop the copy and make a new one.
 
 Output, one row per change (lsn, commit time, schema, table, operation, primary key):
 
