@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" width="1000" height="560" font-family="Helvetica,Arial,sans-serif" font-size="12">
+<defs><marker id="a" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#333"/></marker></defs>
+<rect width="1000" height="560" fill="white"/>
+<line x1="310" y1="65" x2="355" y2="65" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="645" y1="65" x2="690" y2="65" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="835" y1="110" x2="835" y2="170" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="690" y1="215" x2="645" y2="215" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="594" y1="260" x2="741" y2="330" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="668" y="291" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">yes</text>
+<line x1="500" y1="260" x2="500" y2="330" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="500" y="291" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">no</text>
+<line x1="355" y1="375" x2="310" y2="375" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="332" y="371" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">retry</text>
+<line x1="214" y1="330" x2="451" y2="110" stroke="#333" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<text x="332" y="216" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">loops</text>
+<line x1="500" y1="420" x2="500" y2="460" stroke="#333" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<text x="500" y="436" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">you must act</text>
+<rect x="20" y="20" width="290" height="90" rx="8" fill="#dae8fc" stroke="#6c8ebf"/>
+<text x="165.0" y="53" text-anchor="middle" font-weight="bold">1. Old primary starts as standby</text>
+<text x="165.0" y="69" text-anchor="middle">standby.signal + primary_conninfo</text>
+<text x="165.0" y="85" text-anchor="middle">pointing at the new primary</text>
+<rect x="355" y="20" width="290" height="90" rx="8" fill="#e1d5e7" stroke="#9673a6"/>
+<text x="500.0" y="53" text-anchor="middle" font-weight="bold">2. walreceiver connects</text>
+<text x="500.0" y="69" text-anchor="middle">learns the primary is on timeline 2</text>
+<text x="500.0" y="85" text-anchor="middle">fetches 00000002.history</text>
+<rect x="690" y="20" width="290" height="90" rx="8" fill="#e1d5e7" stroke="#9673a6"/>
+<text x="835.0" y="53" text-anchor="middle" font-weight="bold">3. asks for timeline 1 WAL from the</text>
+<text x="835.0" y="69" text-anchor="middle">start of its segment (0/3000000)</text>
+<text x="835.0" y="85" text-anchor="middle">started streaming WAL ... timeline 1</text>
+<rect x="690" y="170" width="290" height="90" rx="8" fill="#fff2cc" stroke="#d6b656"/>
+<text x="835.0" y="203" text-anchor="middle" font-weight="bold">4. new primary: timeline 1 ends at the</text>
+<text x="835.0" y="219" text-anchor="middle">fork point (from the history file)</text>
+<text x="835.0" y="235" text-anchor="middle">End of WAL reached on timeline 1</text>
+<rect x="355" y="170" width="290" height="90" rx="8" fill="#f8cecc" stroke="#b85450"/>
+<text x="500.0" y="203" text-anchor="middle" font-weight="bold">5. startup process decides whether</text>
+<text x="500.0" y="219" text-anchor="middle">to follow timeline 2: compares the</text>
+<text x="500.0" y="235" text-anchor="middle">fork point with its recovery point</text>
+<rect x="690" y="330" width="290" height="90" rx="8" fill="#d5e8d4" stroke="#82b366"/>
+<text x="835.0" y="355" text-anchor="middle" font-weight="bold">fork point &gt;= recovery point</text>
+<text x="835.0" y="371" text-anchor="middle">no WAL beyond the fork</text>
+<text x="835.0" y="387" text-anchor="middle">new target timeline is 2: it streams</text>
+<text x="835.0" y="403" text-anchor="middle">from the new primary, normal standby</text>
+<rect x="355" y="330" width="290" height="90" rx="8" fill="#f8cecc" stroke="#b85450"/>
+<text x="500.0" y="363" text-anchor="middle" font-weight="bold">fork point &lt; recovery point</text>
+<text x="500.0" y="379" text-anchor="middle">new timeline 2 forked off ... before</text>
+<text x="500.0" y="395" text-anchor="middle">current recovery point (extra local WAL)</text>
+<rect x="20" y="330" width="290" height="90" rx="8" fill="#e1d5e7" stroke="#9673a6"/>
+<text x="165.0" y="363" text-anchor="middle" font-weight="bold">6. automatic retry after 5 s</text>
+<text x="165.0" y="379" text-anchor="middle">startup process is still on timeline 1,</text>
+<text x="165.0" y="395" text-anchor="middle">so it requests timeline 1 again</text>
+<rect x="355" y="460" width="290" height="70" rx="8" fill="#d5e8d4" stroke="#82b366"/>
+<text x="500.0" y="491" text-anchor="middle" font-weight="bold">Operator action, not automatic:</text>
+<text x="500.0" y="507" text-anchor="middle">pg_rewind or re-clone (pg_basebackup)</text>
+</svg>

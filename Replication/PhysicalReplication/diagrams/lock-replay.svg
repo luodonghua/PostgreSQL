@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 430" width="1000" height="430" font-family="Helvetica,Arial,sans-serif" font-size="12">
+<defs><marker id="a" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#333"/></marker></defs>
+<rect width="1000" height="430" fill="white"/>
+<line x1="310" y1="65" x2="370" y2="65" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="340" y="61" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">writes</text>
+<line x1="590" y1="65" x2="690" y2="65" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="640" y="61" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">streamed</text>
+<line x1="731" y1="110" x2="592" y2="170" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="408" y1="250" x2="269" y2="310" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="338" y="276" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">no query</text>
+<line x1="500" y1="250" x2="500" y2="310" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="500" y="276" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">short query</text>
+<line x1="592" y1="250" x2="731" y2="310" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="662" y="276" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">long query</text>
+<rect x="20" y="20" width="290" height="90" rx="8" fill="#dae8fc" stroke="#6c8ebf"/>
+<text x="165.0" y="45" text-anchor="middle" font-weight="bold">Primary</text>
+<text x="165.0" y="61" text-anchor="middle">ALTER TABLE / DROP / TRUNCATE /</text>
+<text x="165.0" y="77" text-anchor="middle">LOCK / VACUUM truncation</text>
+<text x="165.0" y="93" text-anchor="middle">takes ACCESS EXCLUSIVE</text>
+<rect x="370" y="20" width="220" height="90" rx="8" fill="#fff2cc" stroke="#d6b656"/>
+<text x="480.0" y="61" text-anchor="middle" font-weight="bold">WAL</text>
+<text x="480.0" y="77" text-anchor="middle">lock record + the change</text>
+<rect x="690" y="20" width="290" height="90" rx="8" fill="#e1d5e7" stroke="#9673a6"/>
+<text x="835.0" y="53" text-anchor="middle" font-weight="bold">Standby startup process</text>
+<text x="835.0" y="69" text-anchor="middle">replays the lock record,</text>
+<text x="835.0" y="85" text-anchor="middle">needs ACCESS EXCLUSIVE on the table</text>
+<rect x="340" y="170" width="320" height="80" rx="8" fill="#f8cecc" stroke="#b85450"/>
+<text x="500.0" y="198" text-anchor="middle" font-weight="bold">Does a standby query hold a lock</text>
+<text x="500.0" y="214" text-anchor="middle">on the table?</text>
+<text x="500.0" y="230" text-anchor="middle">(any SELECT holds ACCESS SHARE)</text>
+<rect x="20" y="310" width="290" height="90" rx="8" fill="#d5e8d4" stroke="#82b366"/>
+<text x="165.0" y="343" text-anchor="middle" font-weight="bold">No</text>
+<text x="165.0" y="359" text-anchor="middle">lock granted,</text>
+<text x="165.0" y="375" text-anchor="middle">change replayed</text>
+<rect x="355" y="310" width="290" height="90" rx="8" fill="#d5e8d4" stroke="#82b366"/>
+<text x="500.0" y="343" text-anchor="middle" font-weight="bold">Yes, but it finishes within</text>
+<text x="500.0" y="359" text-anchor="middle">max_standby_streaming_delay</text>
+<text x="500.0" y="375" text-anchor="middle">replay continues</text>
+<rect x="690" y="310" width="290" height="90" rx="8" fill="#f8cecc" stroke="#b85450"/>
+<text x="835.0" y="343" text-anchor="middle" font-weight="bold">Yes, still running after the delay</text>
+<text x="835.0" y="359" text-anchor="middle">query cancelled, confl_lock + 1</text>
+<text x="835.0" y="375" text-anchor="middle">(delay = -1: replay waits, lag grows)</text>
+</svg>

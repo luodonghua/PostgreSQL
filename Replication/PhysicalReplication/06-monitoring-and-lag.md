@@ -157,6 +157,72 @@ FROM pg_stat_wal_receiver;
 | `not_yet_sent` grows | Walsender busy or blocked | CPU; too many standbys on one primary → cascade |
 | Lag appears after standby restart | Normal catch-up | Wait, or check slot/archive |
 | Standby falls permanently behind, disk of the primary grows | Slot retention | [03](03-replication-slots-and-wal-retention.md) |
+| Many `SAVEPOINT`s or PL/pgSQL `EXCEPTION` blocks per transaction; standby reads slow while replay is also behind | Subtransactions add replay work, and a transaction with more than 64 of them (overflow) makes standby queries look up `pg_subtrans` | [Subtransactions and MultiXacts](#subtransactions-and-multixacts) |
+| Hot parent row referenced by many foreign-key inserts; primary slow | MultiXacts: many sessions share a row lock. Mostly slows the **primary**, replay is barely affected | [Subtransactions and MultiXacts](#subtransactions-and-multixacts) |
+
+## Subtransactions and MultiXacts
+
+Both are transaction-ID bookkeeping that the primary writes to WAL and the standby has to replay.
+Measured on PostgreSQL 18.7 (primary + async standby on one 4-core machine, `fsync=off`; a pause/resume of
+replay to time redo alone). Treat the numbers as relative, not absolute.
+
+**Subtransactions** come from `SAVEPOINT`, PL/pgSQL `BEGIN ... EXCEPTION` blocks, and drivers or ORMs that
+wrap statements in savepoints. Each one that writes gets its own transaction ID.
+
+| Workload (4 clients × 1500 transactions × 100 inserts) | Primary time | WAL | Standby replay time |
+|---|---|---|---|
+| plain inserts | 15.4 – 16.0 s | 81 MB | 3.8 s |
+| each insert inside an `EXCEPTION` block (100 subtransactions per transaction) | 17.9 – 19.6 s | 86 MB | 4.3 s |
+
+So heavy subtransaction use costs about 5% more WAL and about 15% more replay time. That is a measurable
+but modest lag contribution.
+
+The larger effect is on **standby reads**. A transaction with more than 64 subtransactions (it
+"overflows" the per-backend cache) makes every snapshot taken while it is open resolve transaction IDs
+through `pg_subtrans` (a disk-backed cache, the `subtransaction` SLRU). Test: one open overflowed
+transaction on the primary, then a `count(*)` on the standby over 800k rows, 600k of them newer than that
+transaction:
+
+| State | `count(*)` on the standby | `subtransaction` SLRU accesses per scan |
+|---|---|---|
+| overflowed transaction open on the primary | 242 – 287 ms | 600 008 |
+| it ended (after the next standby snapshot record) | 109 – 155 ms | 0 |
+
+Standby queries run about twice as slow while it is open, and recover once it ends. In a busy system
+those lookups compete for the same SLRU locks as replay. I did not get a clean measurement of that effect
+on replay lag (the test machine ran out of CPU), so treat it as a risk, not a measured result.
+
+**MultiXacts** appear when several transactions lock the same row at once: `SELECT ... FOR SHARE`, or
+inserts into a child table whose foreign key points at one hot parent row.
+
+| Workload (8 clients, 64 000 single-row inserts, all into the same parent) | Primary time | WAL | Standby replay time |
+|---|---|---|---|
+| child table without foreign key | 25.3 s | 54 MB | 5.25 s |
+| child table with foreign key to one hot parent row | 55.1 s | 60 MB | 5.52 s |
+
+MultiXacts made the **primary** take more than twice as long (the multixact SLRUs were read about 18 500 times each),
+while WAL grew 10% and replay only 5%. The standby is not the bottleneck here. Replication lag from this
+cause is usually small, because the primary writes WAL more slowly.
+
+Checks (primary and standby):
+
+```sql
+-- SLRU activity: look for growing blks_read on these rows
+SELECT name, blks_hit, blks_read FROM pg_stat_slru
+WHERE name IN ('subtransaction', 'multixact_offset', 'multixact_member');
+```
+
+Wait events `SubtransSLRU`, `MultiXactOffsetSLRU` and `MultiXactMemberSLRU` in `pg_stat_activity` point to the
+same problem (names from the documentation, not observed here).
+
+What to do:
+- Avoid a savepoint or `EXCEPTION` block per row. Keep a transaction under 64 subtransactions. Check
+  the driver: for example JDBC `autosave=always` creates a savepoint per statement.
+- End long transactions on the primary. An open overflowed transaction is what slows the standby.
+- For hot parent rows, shorten the transactions that touch them or change the key design, so fewer
+  sessions share the same row lock.
+- PostgreSQL 17+ has `subtransaction_buffers`, `multixact_offset_buffers` and `multixact_member_buffers`
+  (defaults in 18.7: 64, 16 and 32 × 8 kB). Raising them is possible, but I did not test it.
 
 ## Quick health script (primary)
 

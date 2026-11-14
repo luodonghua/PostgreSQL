@@ -81,11 +81,141 @@ LOG:  restarted WAL streaming at 0/3000000 on timeline 1       <- loops
 It **cannot join**: its own WAL contains changes after the fork point that the new primary doesn't have.
 No amount of retrying helps.
 
+![old primary stuck in a retry loop](diagrams/old-primary-loop.svg)
+
+Editable: [diagrams/old-primary-loop.drawio](diagrams/old-primary-loop.drawio).
+
+#### Reading the log line by line
+
+| Log line | What happened |
+|---|---|
+| `fetching timeline history file for timeline 2 from primary server` | The walreceiver connected and learned the new primary is on timeline 2. It downloads `00000002.history`, which records where timeline 1 ended (the **fork point**). Learning this does not make the standby follow timeline 2; the startup process decides that (below). |
+| `started streaming WAL from primary at 0/3000000 on timeline 1` | The walreceiver asks for WAL on the timeline the startup process is on, here the old primary's own timeline 1, starting at the beginning of the WAL segment that holds its position (`0/3000000` is a segment boundary). |
+| `replication terminated by primary server` + `DETAIL: End of WAL reached on timeline 1 at <fork point>` | The new primary sends timeline 1 only up to the fork point and then stops. (This pair is in the real log, between the lines above and below.) |
+| `new timeline 2 forked off current database system timeline 1 before current recovery point 0/30437E0` | The startup process checks the fork point against its own recovery point, the end of the WAL it already has on timeline 1. Here the fork point is **before** `0/30437E0`, so the old primary has WAL the new timeline does not contain. It cannot switch to timeline 2 without discarding that WAL, so it refuses. |
+| `restarted WAL streaming at 0/3000000 on timeline 1` | The walreceiver retries after `wal_retrieve_retry_interval` (5 s default). The startup process refused timeline 2 and is still on timeline 1, so the request is the same and steps 2 to 4 repeat forever. Nothing in the server escalates; breaking the loop is an operator action. A newer log line may also say `waiting for WAL to become available at ...`. |
+
+The loop is a refusal, not a transient failure. Waiting, restarting or reloading does not change
+the fork point or the old primary's local WAL.
+
+Reproduced on PostgreSQL 18.7 (stop primary A cleanly, promote B, restart A and insert a row on it,
+then start A as a standby of B):
+
+| Item | Value |
+|---|---|
+| Fork point in `00000002.history` on B | `0/302EB38` |
+| Old primary A's recovery point | `0/3033188`, about 18 KB past the fork point |
+| Row `3` | exists only on A |
+| Row `2` | exists only on B |
+| Retry interval seen in the log | every 5 s |
+
+If the old primary had **not** written anything after the fork point (recovery point at or before it), the
+same attempt succeeds. Tested on PostgreSQL 18.7 (old primary stopped cleanly, standby promoted, old
+primary started as a standby without taking a write). The log:
+
+```
+LOG:  fetching timeline history file for timeline 2 from primary server
+LOG:  started streaming WAL from primary at 0/3000000 on timeline 1
+LOG:  replication terminated by primary server        <- End of WAL reached on timeline 1 at 0/302EB38
+LOG:  new target timeline is 2                        <- startup process accepts timeline 2
+LOG:  restarted WAL streaming at 0/3000000 on timeline 2
+LOG:  redo starts at 0/302EB38                        <- replay continues from the fork point
+```
+
+Result: `pg_stat_replication` on the new primary showed the old primary as `streaming` with
+`replay_lsn` equal to `sent_lsn`, `pg_stat_wal_receiver.received_tli` was `2`, and a row inserted on the new
+primary afterwards appeared on it. No rewind or rebuild was needed. After this you just treat it as a normal
+standby: reconfigure `primary_conninfo`/slot as needed and check lag ([06](06-monitoring-and-lag.md)).
+In practice a primary that restarts after a crash usually writes at least a checkpoint, so don't count on it.
+
 ### Attempt 2: `pg_rewind` (fast re-sync without a full copy)
 
 `pg_rewind` finds the last common checkpoint, then copies from the new primary only the blocks the old primary
-changed since then (plus all non-relation files), and discards the divergent changes. Requirements and
-findings from the test:
+changed since then (plus all non-relation files), and discards the divergent changes.
+
+#### How it works
+
+`pg_rewind` does **not** undo the old primary's changes. It never reads the old values back. It answers one
+question instead: *which blocks can differ from the new primary?* Everything else is, by construction, identical,
+because both servers were the same cluster until the fork point.
+
+The old primary's own WAL answers it. WAL records name every block they change, so the WAL written after the
+fork is a complete list of the blocks the old primary modified.
+
+![pg_rewind flow](diagrams/pg-rewind-flow.svg)
+
+Editable: [diagrams/pg-rewind-flow.drawio](diagrams/pg-rewind-flow.drawio).
+
+1. **Find the fork point.** It compares the timeline history of the old primary with the new primary's
+   (`00000002.history`) and gets the LSN where they diverged (`servers diverged at WAL location ...`).
+2. **Find the last common checkpoint** before that point in the old primary's WAL
+   (`rewinding from last common checkpoint at ...`). Both the WAL scan (step 3) and the final replay (step 6) start there.
+3. **Read the old primary's WAL** from there to its end and collect `(file, block number)` for every record. The
+   record contents are ignored, only which block was touched. Only the main fork is tracked; other forks are copied whole.
+4. **Compare the file lists** of both servers and decide an action per file:
+
+   | File situation | Action |
+   |---|---|
+   | Relation file, same size on both | Copy **only the blocks collected in step 3** |
+   | Relation file, larger on old primary | Truncate to the new primary's size |
+   | Relation file, smaller on old primary | Copy the missing tail |
+   | Only on the old primary (created after the fork) | Remove |
+   | Only on the new primary | Copy whole |
+   | Non-relation file (`pg_xact`, config, `_fsm`, `_vm`, ...) | Copy whole |
+   | WAL segment before the fork's segment, same size | Leave |
+   | WAL segment from the fork's segment on | Copy from the new primary (replaces the divergent WAL) |
+
+5. **Copy** those blocks and files from the new primary (over a normal connection, or from its data directory).
+6. **Prepare recovery.** It writes a `backup_label` that starts replay at the last common checkpoint, and edits
+   `pg_control` to `in archive recovery` with `minRecoveryPoint` = the new primary's current WAL end. This is the same
+   mechanism as restoring a base backup taken from a live server.
+7. **Start the old primary.** It replays the new primary's WAL from that checkpoint. This applies every block the
+   *new primary* changed after the fork, including blocks `pg_rewind` did not copy. Then it streams normally.
+
+Two sets of blocks are therefore handled in two different ways:
+
+| Blocks changed after the fork | Found by | Fixed by |
+|---|---|---|
+| on the **old** primary | reading its WAL (step 3) | overwriting them with the new primary's current version (step 5) |
+| on the **new** primary | nothing needs to find them | WAL replay (step 7) |
+
+The copied blocks can be newer than the fork point, and that is fine: replay applies a record only when the page's
+LSN is older than the record, so it is safe to replay over a page that is already ahead.
+
+**Why the prerequisites exist.**
+- **Checksums or `wal_log_hints = on`.** A hint-bit change normally leaves no WAL record, so the old primary could have
+  modified a page without any trace and step 3 would miss it. With either setting, the first hint-bit change after a
+  checkpoint writes a full-page image. Otherwise `pg_rewind` stops with
+  `target server needs to use either data checksums or "wal_log_hints = on"`.
+- **`full_page_writes = on`**. Required by the PostgreSQL documentation. Blocks copied from a live new primary can be caught mid-write,
+  like in an online base backup; the full-page images in its WAL let replay repair them.
+- **WAL since the last common checkpoint must still exist** on the old primary (step 3 reads it). Hence `-c` and `restore_command`.
+- **Clean shutdown.** The tool only reads WAL up to the shutdown checkpoint (the source says it would otherwise have to replay
+  to the first invalid record like crash recovery). If it wasn't clean, `pg_rewind` runs crash recovery first.
+
+**How much does it copy?** PostgreSQL 18.7: 320 MB database (one 269 MB table plus its index). The old primary
+then updated 500 rows and inserted 2000; the new primary updated 1001 other rows.
+
+| Item | Size |
+|---|---|
+| `pg_rewind` reported | `need to copy 51 MB (total source directory size is 383 MB)` |
+| Blocks of the 269 MB table and its index that were copied | 296 KB in 7 chunks |
+| All `base/` chunks (including catalog files, `_fsm`, `_vm`) | 3.9 MB |
+| The rest | three 16 MB WAL segments from the fork on |
+
+After starting the old primary, the log showed `starting backup recovery with redo LSN 0/1E000028`, `redo starts at 0/1E0000A0`
+(the fork point), `completed backup recovery ... end LSN 0/1E067880` and `started streaming WAL from primary at 0/1E000000 on timeline 2`.
+Both servers then had 2 000 000 rows, 1001 rows updated on the new primary and **0** divergent rows. The tool
+cost scales with how much the old primary changed after the fork, not with the size of the database.
+
+**Compared with other databases.** `pg_rewind` is not unique in goal: Oracle's Flashback Database, which Data Guard
+uses to reinstate a failed primary, also rolls an old primary back. The mechanism differs. Flashback needs flashback
+logs with block before-images written in advance. `pg_rewind` needs no extra logging: it reuses the WAL the old primary
+already has and takes the correct blocks from the new primary. (I did not test Oracle; this is from its documentation.)
+
+Source: `src/bin/pg_rewind` (`pg_rewind.c`, `parsexlog.c`, `filemap.c`), PostgreSQL master (19devel).
+
+#### Requirements and findings from the test
 
 1. **Old primary must be shut down cleanly**; `pg_rewind` can run crash recovery itself in a single-user backend if
    needed (I saw `redo is not required` / `checkpoint … shutdown immediate` lines).

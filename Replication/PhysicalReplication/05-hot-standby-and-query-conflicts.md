@@ -20,7 +20,7 @@ The grace period is `max_standby_streaming_delay` (default 30 s).
 | Conflict | Caused by (on primary) | Error text on the standby | Counter |
 |---|---|---|---|
 | **Snapshot** | `VACUUM`/pruning removed row versions the standby query's snapshot can still see | `canceling statement due to conflict with recovery` / `User query might have needed to see row versions that must be removed.` | `confl_snapshot` |
-| **Lock** | `ACCESS EXCLUSIVE` lock replayed (`ALTER TABLE`, `DROP`, `TRUNCATE`, `VACUUM` truncation, `LOCK`) | `…` / `User was holding a relation lock for too long.` | `confl_lock` |
+| **Lock** | `ACCESS EXCLUSIVE` lock replayed (`ALTER TABLE`, `DROP`, `TRUNCATE`, `VACUUM` truncation, `LOCK`) | `canceling statement due to conflict with recovery` / `User was holding a relation lock for too long.` | `confl_lock` |
 | **Buffer pin** | VACUUM needs a buffer that a standby query has pinned | `User was holding shared buffer pin for too long.` | `confl_bufferpin` |
 | **Deadlock** | Standby query would deadlock with replay | `User transaction caused buffer deadlock with recovery.` | `confl_deadlock` |
 | **Tablespace** | `DROP TABLESPACE` while queries use it | `User was or might have been using tablespace that must be dropped.` | `confl_tablespace` |
@@ -30,6 +30,32 @@ The grace period is `max_standby_streaming_delay` (default 30 s).
 `pg_stat_database_conflicts` (standby only) counts **cancelled queries**, per type. Only the snapshot and lock rows
 were reproduced below; the buffer-pin, deadlock, tablespace and database texts are from the PostgreSQL documentation. Bursts in the log: set
 `log_recovery_conflict_waits = on` to log the wait if replay was blocked longer than `deadlock_timeout`.
+
+## Why the standby replays locks (lock conflicts)
+
+The standby does not run the DDL again. It replays WAL records, which are **physical** changes: a
+file removed, blocks truncated, catalog rows rewritten. A query running on the standby knows nothing
+about them.
+
+On the primary, `ACCESS EXCLUSIVE` keeps every other session off the table while it is changed. Standby
+queries are not sessions on the primary, so the primary cannot wait for them. Without a lock on the
+standby, replay could remove or truncate a file under a running query, which would then fail or read
+wrong data. So the primary writes its `ACCESS EXCLUSIVE` locks into WAL, and the standby's startup
+process takes the same lock before replaying the change.
+
+![lock replay on the standby](diagrams/lock-replay.svg)
+
+Editable: [diagrams/lock-replay.drawio](diagrams/lock-replay.drawio).
+
+So "User was holding a relation lock for too long" means a standby query held a lock on the table
+longer than replay was willing to wait. Every `SELECT` takes `ACCESS SHARE` on the tables it reads, so
+any standby query that reads the table conflicts, not just one that modifies anything.
+
+You cannot turn the lock off. You choose between waiting (`max_standby_streaming_delay` larger or `-1`;
+replay lags) and cancelling (small delay; queries fail). `hot_standby_feedback` does not help, because it
+only keeps old row versions and does not affect locks. Reduce the conflicts at the source instead:
+run migrations when no long query is on the standby, and set `vacuum_truncate = off` on tables
+where VACUUM truncation keeps cancelling queries.
 
 ## Experiments (18.6)
 

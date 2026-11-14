@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1010 300" width="1010" height="300" font-family="Helvetica,Arial,sans-serif" font-size="12">
+<defs><marker id="a" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#333"/></marker></defs>
+<rect width="1010" height="300" fill="white"/>
+<line x1="180" y1="75" x2="220" y2="75" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="380" y1="75" x2="420" y2="75" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="580" y1="75" x2="620" y2="75" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="780" y1="75" x2="820" y2="75" stroke="#333" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="631" y1="110" x2="474" y2="190" stroke="#333" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<line x1="687" y1="110" x2="658" y2="190" stroke="#333" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<text x="672" y="146" text-anchor="middle" fill="#333" stroke="white" stroke-width="3" paint-order="stroke">synchronous_commit
+decides which ack</text>
+<line x1="743" y1="110" x2="842" y2="190" stroke="#333" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<rect x="20" y="40" width="160" height="70" rx="8" fill="#dae8fc" stroke="#6c8ebf"/>
+<text x="100.0" y="71" text-anchor="middle" font-weight="bold">client</text>
+<text x="100.0" y="87" text-anchor="middle">COMMIT</text>
+<rect x="220" y="40" width="160" height="70" rx="8" fill="#fff2cc" stroke="#d6b656"/>
+<text x="300.0" y="63" text-anchor="middle" font-weight="bold">primary</text>
+<text x="300.0" y="79" text-anchor="middle">local WAL flush</text>
+<text x="300.0" y="95" text-anchor="middle">(always first)</text>
+<rect x="420" y="40" width="160" height="70" rx="8" fill="#e1d5e7" stroke="#9673a6"/>
+<text x="500.0" y="63" text-anchor="middle" font-weight="bold">walsender sends</text>
+<text x="500.0" y="79" text-anchor="middle">WAL to standby</text>
+<text x="500.0" y="95" text-anchor="middle">(wait starts)</text>
+<rect x="620" y="40" width="160" height="70" rx="8" fill="#f8cecc" stroke="#b85450"/>
+<text x="700.0" y="71" text-anchor="middle" font-weight="bold">standby</text>
+<text x="700.0" y="87" text-anchor="middle">acknowledges</text>
+<rect x="820" y="40" width="160" height="70" rx="8" fill="#dae8fc" stroke="#6c8ebf"/>
+<text x="900.0" y="79" text-anchor="middle">client gets OK</text>
+<rect x="300" y="190" width="210" height="70" rx="8" fill="#f8cecc" stroke="#b85450"/>
+<text x="405.0" y="213" text-anchor="middle" font-weight="bold">remote_write</text>
+<text x="405.0" y="229" text-anchor="middle">standby received + wrote</text>
+<text x="405.0" y="245" text-anchor="middle">(OS cache)</text>
+<rect x="540" y="190" width="210" height="70" rx="8" fill="#f8cecc" stroke="#b85450"/>
+<text x="645.0" y="221" text-anchor="middle" font-weight="bold">on (default)</text>
+<text x="645.0" y="237" text-anchor="middle">standby flushed (fsync)</text>
+<rect x="780" y="190" width="210" height="70" rx="8" fill="#d5e8d4" stroke="#82b366"/>
+<text x="885.0" y="213" text-anchor="middle" font-weight="bold">remote_apply</text>
+<text x="885.0" y="229" text-anchor="middle">standby replayed</text>
+<text x="885.0" y="245" text-anchor="middle">(visible to queries)</text>
+</svg>

@@ -11,10 +11,9 @@ If you name standbys in `synchronous_standby_names`, `COMMIT` additionally waits
 the standby(s) acknowledge the commit record up to a level chosen by `synchronous_commit`.
 The primary still writes to the local disk first; the wait is added afterwards.
 
-```
-client COMMIT ──► primary WAL flush ──► [send to standby] ──► standby acks ──► client gets OK
-                                            ▲ synchronous_commit decides which ack
-```
+![synchronous commit flow](diagrams/synchronous-commit.svg)
+
+Editable: [diagrams/synchronous-commit.drawio](diagrams/synchronous-commit.drawio).
 
 ## `synchronous_commit` levels (with a synchronous standby configured)
 
@@ -66,8 +65,18 @@ Names match the standby's `application_name` (set in its `primary_conninfo`).
 | `ANY 1 (a, b)` | `a` down, `b` up | `b` shown as `quorum`; commit OK |
 | `ANY 2 (a, b)` | only `b` up | **commit blocked** (psql timed out at 5 s) |
 
-`sync_state` meanings in `pg_stat_replication`: `sync` (currently counted for FIRST), `potential` (will take over),
-`quorum` (member of an ANY set), `async`.
+### `sync_state` in `pg_stat_replication`
+
+Official description: "Synchronous state of this standby server." Possible values:
+
+| `sync_state` | Official meaning | In practice |
+|---|---|---|
+| `async` | This standby server is asynchronous. | Not named in `synchronous_standby_names`. Commits never wait for it. |
+| `potential` | This standby server is now asynchronous, but can potentially become synchronous if one of current synchronous ones fails. | Named in a `FIRST` list but beyond the first *N*. It takes over (becomes `sync`) when a higher-priority standby disconnects. |
+| `sync` | This standby server is synchronous. | Named in a `FIRST` list within the first *N*. Commits wait for it. |
+| `quorum` | This standby server is considered as a candidate for quorum standbys. | Member of an `ANY` list. Commits wait for any *N* of the members, not for a specific one. |
+
+`sync_priority` is the position in a `FIRST` list (`1` = highest priority) and is `0` for `async`. It has no effect with `ANY` (quorum).
 
 ## The availability trap: no sync standby ⇒ writes stop
 
@@ -85,8 +94,24 @@ Single synchronous standby `standby_a`; I killed it and tried an `INSERT`:
 - Recovery: bring the standby back, or remove it from `synchronous_standby_names` and reload —
   the waiting commit completed immediately and the row became visible (`count` → 1).
 
-If you cancel the wait (`Ctrl-C`/`pg_cancel_backend`), PostgreSQL warns that the transaction **was already committed
-locally** and may not be on the standby (documented behaviour; not run here). Terminating the session does the same.
+### Cancelling the wait
+
+The local WAL flush has already happened, so a cancel does not roll anything back. Tested on
+PostgreSQL 18.7 (primary + one synchronous standby, standby stopped):
+
+| Action | What the client sees | Result |
+|---|---|---|
+| `pg_cancel_backend` (or `Ctrl-C`) | `WARNING: canceling wait for synchronous replication due to user request`<br>`DETAIL: The transaction has already committed locally, but might not have been replicated to the standby.`<br>then `INSERT 0 1` (**success, not an error**) | Row becomes visible to other sessions |
+| `pg_terminate_backend` | Same warning, then `terminating connection due to administrator command` and the connection is lost | Row is committed and visible; the client never got a confirmation |
+| Primary crash (`pg_ctl stop -m immediate`) and restart, standby still down | – | Both rows are still there (durable on the primary's disk) |
+
+Consequences:
+- A cancelled commit is a **committed** commit. Don't retry it blindly; check whether the row exists first.
+- The change may be missing on the standby. If the primary is lost and you fail over, it is lost.
+- If the standby comes back in time, it catches up from the primary's WAL and receives the
+  locally committed transaction like any other (not tested). This needs the primary to still have
+  the WAL: use a physical slot, `wal_keep_size`, or an archive.
+- While the backend waits, other sessions see **0** rows. Visibility starts when the wait ends, whether by ack or by cancel.
 
 Design implications:
 
