@@ -88,6 +88,18 @@ psql -v slot=app_sub_peek -v publication=app_pub -f peek_pgoutput_simple.sql
 SELECT pg_drop_replication_slot('app_sub_peek');
 ```
 
+- **The `peek_pgoutput_*.sql` scripts only decode pgoutput slots.** The copy keeps the original's
+  plugin, so for a slot owned by another tool (`test_decoding`, `wal2json`, `pglogical_output`, ...)
+  pass `'pgoutput'` as the fourth argument, and give the publication name:
+
+  ```sql
+  SELECT pg_copy_logical_replication_slot('cdc_slot', 'cdc_slot_peek', false, 'pgoutput');
+  ```
+
+  Without it the script stops with `slot '...' uses plugin 'test_decoding' - this script only decodes pgoutput`.
+  For such a slot the output is only an approximation of what the original consumer sees: it
+  lists just the tables of the publication you name. To see every table, use
+  [`slot_peek.sql`](sql/slot_peek.sql) instead.
 - The copy must be **non-temporary** (`false`): a temporary slot is dropped when the copying
   session ends, so it would be gone by the time the script runs in another session.
 - Drop the copy promptly. It retains WAL like any slot until dropped.
